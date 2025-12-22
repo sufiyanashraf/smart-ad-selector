@@ -1,16 +1,37 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { AdMetadata, DemographicCounts, DetectionResult } from '@/types/ad';
 import { VideoPlayer } from '@/components/VideoPlayer';
 import { DemographicStats } from '@/components/DemographicStats';
 import { AdQueue } from '@/components/AdQueue';
 import { SystemLogs } from '@/components/SystemLogs';
 import { WebcamPreview } from '@/components/WebcamPreview';
+import { SettingsPanel, CaptureSettings } from '@/components/SettingsPanel';
+import { AdManager } from '@/components/AdManager';
 import { useWebcam } from '@/hooks/useWebcam';
 import { useFaceDetection } from '@/hooks/useFaceDetection';
 import { useAdQueue } from '@/hooks/useAdQueue';
+import { sampleAds } from '@/data/sampleAds';
 import { Tv, Zap, Activity } from 'lucide-react';
 
 const SmartAdsSystem = () => {
+  // Settings state
+  const [captureSettings, setCaptureSettings] = useState<CaptureSettings>({
+    startPercent: 75,
+    endPercent: 92,
+  });
+
+  // Custom ads state
+  const [customAds, setCustomAds] = useState<AdMetadata[]>([...sampleAds]);
+
+  // Recalculate ads when settings change
+  const adsWithCaptureWindows = useMemo(() => {
+    return customAds.map(ad => ({
+      ...ad,
+      captureStart: Math.floor(ad.duration * captureSettings.startPercent / 100),
+      captureEnd: Math.floor(ad.duration * captureSettings.endPercent / 100),
+    }));
+  }, [customAds, captureSettings]);
+
   const [currentAd, setCurrentAd] = useState<AdMetadata | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -26,21 +47,46 @@ const SmartAdsSystem = () => {
   const captureIntervalRef = useRef<number | null>(null);
   const adDetectionsRef = useRef<DetectionResult[]>([]);
   const isCapturingRef = useRef(false);
+  const initializedRef = useRef(false);
 
   const { videoRef, isActive: webcamActive, hasPermission, error: webcamError, startWebcam, stopWebcam } = useWebcam();
   const { isModelLoaded, isLoading: modelsLoading, detectFaces } = useFaceDetection();
-  const { queue, logs, getNextAd, reorderQueue, addLog } = useAdQueue();
+  const { queue, logs, getNextAd, reorderQueue, addLog, updateQueue } = useAdQueue({
+    customAds: adsWithCaptureWindows,
+    captureStartPercent: captureSettings.startPercent,
+    captureEndPercent: captureSettings.endPercent,
+  });
+
+  // Update queue when ads change
+  useEffect(() => {
+    updateQueue(adsWithCaptureWindows);
+  }, [adsWithCaptureWindows, updateQueue]);
 
   // Initialize with first ad
   useEffect(() => {
-    const firstAd = getNextAd();
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+
+    const firstAd = adsWithCaptureWindows[0];
     if (firstAd) {
       setCurrentAd(firstAd);
       setIsPlaying(true);
       addLog('ad', `Starting system with: "${firstAd.title}"`);
       addLog('info', `Capture window: ${firstAd.captureStart}s - ${firstAd.captureEnd}s`);
     }
-  }, []);
+  }, [adsWithCaptureWindows, addLog]);
+
+  // Handle settings change
+  const handleSettingsChange = useCallback((newSettings: CaptureSettings) => {
+    setCaptureSettings(newSettings);
+    addLog('info', `⚙️ Settings updated: Capture ${newSettings.startPercent}% - ${newSettings.endPercent}%`);
+  }, [addLog]);
+
+  // Handle ads change
+  const handleAdsChange = useCallback((newAds: AdMetadata[]) => {
+    setCustomAds(newAds);
+    addLog('info', `📁 Ad library updated: ${newAds.length} ads`);
+  }, [addLog]);
 
   // Start detection loop when capturing
   const startDetectionLoop = useCallback(() => {
@@ -48,7 +94,6 @@ const SmartAdsSystem = () => {
       window.clearInterval(captureIntervalRef.current);
     }
 
-    // Run detection every 1.5 seconds
     captureIntervalRef.current = window.setInterval(async () => {
       if (!isCapturingRef.current || !videoRef.current) return;
 
@@ -70,7 +115,7 @@ const SmartAdsSystem = () => {
     }
   }, []);
 
-  // Capture window logic - check every time currentTime updates
+  // Capture window logic
   useEffect(() => {
     if (!currentAd || !isPlaying) return;
 
@@ -79,7 +124,6 @@ const SmartAdsSystem = () => {
       currentTime <= currentAd.captureEnd;
 
     if (inCaptureWindow && !isCapturingRef.current) {
-      // START capturing
       console.log('[Capture] Starting capture window');
       isCapturingRef.current = true;
       setIsCapturing(true);
@@ -90,7 +134,6 @@ const SmartAdsSystem = () => {
       startWebcam().then((success) => {
         if (success) {
           addLog('webcam', 'Camera activated, scanning for viewers...');
-          // Wait a moment for camera to initialize, then start detection
           setTimeout(() => {
             startDetectionLoop();
           }, 500);
@@ -101,7 +144,6 @@ const SmartAdsSystem = () => {
       });
 
     } else if (!inCaptureWindow && isCapturingRef.current) {
-      // STOP capturing
       console.log('[Capture] Ending capture window');
       isCapturingRef.current = false;
       setIsCapturing(false);
@@ -126,10 +168,8 @@ const SmartAdsSystem = () => {
   }, []);
 
   const handleAdEnded = useCallback(() => {
-    // Process detections from this ad
     const detections = adDetectionsRef.current;
     
-    // Stop any ongoing capture
     isCapturingRef.current = false;
     setIsCapturing(false);
     stopDetectionLoop();
@@ -149,20 +189,24 @@ const SmartAdsSystem = () => {
       setDemographics(newDemographics);
       addLog('info', `📊 Demographics updated: M${newDemographics.male}/F${newDemographics.female}, Young${newDemographics.young}/Adult${newDemographics.adult}`);
 
-      // Reorder queue based on new demographics
       reorderQueue(newDemographics);
     }
 
-    // Play next ad
     const nextAd = getNextAd();
     if (nextAd) {
-      setCurrentAd(nextAd);
+      // Apply current capture settings to next ad
+      const adWithWindow = {
+        ...nextAd,
+        captureStart: Math.floor(nextAd.duration * captureSettings.startPercent / 100),
+        captureEnd: Math.floor(nextAd.duration * captureSettings.endPercent / 100),
+      };
+      setCurrentAd(adWithWindow);
       setCurrentTime(0);
       setIsPlaying(true);
-      addLog('ad', `▶️ Now playing: "${nextAd.title}"`);
-      addLog('info', `Capture window: ${nextAd.captureStart}s - ${nextAd.captureEnd}s`);
+      addLog('ad', `▶️ Now playing: "${adWithWindow.title}"`);
+      addLog('info', `Capture window: ${adWithWindow.captureStart}s - ${adWithWindow.captureEnd}s`);
     }
-  }, [demographics, getNextAd, reorderQueue, stopWebcam, stopDetectionLoop, addLog]);
+  }, [demographics, getNextAd, reorderQueue, stopWebcam, stopDetectionLoop, addLog, captureSettings]);
 
   const handleSkip = useCallback(() => {
     addLog('ad', `⏭️ Skipped: "${currentAd?.title}"`);
@@ -185,15 +229,27 @@ const SmartAdsSystem = () => {
           <h1 className="text-2xl lg:text-3xl font-display font-bold tracking-tight">
             Smart<span className="text-primary">Ads</span> System
           </h1>
-          <div className="ml-auto flex items-center gap-2 text-sm">
-            <Activity className={`h-4 w-4 ${isCapturing ? 'text-destructive animate-pulse' : 'text-success'}`} />
-            <span className="text-muted-foreground">
-              {modelsLoading ? 'Loading AI...' : isModelLoaded ? 'AI Ready' : 'Demo Mode'}
-            </span>
+          <div className="ml-auto flex items-center gap-3">
+            <AdManager 
+              ads={customAds}
+              onAdsChange={handleAdsChange}
+              captureStartPercent={captureSettings.startPercent}
+              captureEndPercent={captureSettings.endPercent}
+            />
+            <SettingsPanel 
+              settings={captureSettings}
+              onSettingsChange={handleSettingsChange}
+            />
+            <div className="flex items-center gap-2 text-sm pl-3 border-l border-border">
+              <Activity className={`h-4 w-4 ${isCapturing ? 'text-destructive animate-pulse' : 'text-success'}`} />
+              <span className="text-muted-foreground">
+                {modelsLoading ? 'Loading AI...' : isModelLoaded ? 'AI Ready' : 'Demo Mode'}
+              </span>
+            </div>
           </div>
         </div>
         <p className="text-muted-foreground text-sm">
-          Dynamic ad targeting powered by real-time demographic detection • Camera activates at 75% of ad duration
+          Dynamic ad targeting powered by real-time demographic detection • Camera activates at {captureSettings.startPercent}% of ad duration
         </p>
       </header>
 
@@ -249,7 +305,9 @@ const SmartAdsSystem = () => {
               face-api.js for detection
             </span>
             <span>•</span>
-            <span>Camera activates at 75% of ad, closes at 92%</span>
+            <span>Camera: {captureSettings.startPercent}% - {captureSettings.endPercent}% of ad</span>
+            <span>•</span>
+            <span>{customAds.length} ads loaded</span>
           </div>
           <div className="flex gap-4">
             <span>Prototype v1.0</span>
