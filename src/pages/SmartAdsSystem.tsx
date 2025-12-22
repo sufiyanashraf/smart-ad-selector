@@ -103,6 +103,17 @@ const SmartAdsSystem = () => {
       if (results.length > 0) {
         adDetectionsRef.current.push(...results);
         setRecentDetections(prev => [...results, ...prev].slice(0, 10));
+        
+        // Update demographics in real-time with current session data
+        const allDetections = adDetectionsRef.current;
+        const newDemographics = {
+          male: allDetections.filter(d => d.gender === 'male').length,
+          female: allDetections.filter(d => d.gender === 'female').length,
+          young: allDetections.filter(d => d.ageGroup === 'young').length,
+          adult: allDetections.filter(d => d.ageGroup === 'adult').length,
+        };
+        setDemographics(newDemographics);
+        
         addLog('detection', `Detected ${results.length} viewer(s): ${results.map(r => `${r.gender}/${r.age}y`).join(', ')}`);
       }
     }, 1500);
@@ -129,7 +140,12 @@ const SmartAdsSystem = () => {
       setIsCapturing(true);
       adDetectionsRef.current = [];
       
+      // RESET demographics to zero when capture starts
+      setDemographics({ male: 0, female: 0, young: 0, adult: 0 });
+      setRecentDetections([]);
+      
       addLog('webcam', `📷 CAPTURE STARTED (${currentAd.captureStart}s - ${currentAd.captureEnd}s)`);
+      addLog('info', '🔄 Demographics reset - scanning for current viewers...');
       
       startWebcam().then((success) => {
         if (success) {
@@ -168,33 +184,21 @@ const SmartAdsSystem = () => {
   }, []);
 
   const handleAdEnded = useCallback(() => {
-    const detections = adDetectionsRef.current;
-    
     isCapturingRef.current = false;
     setIsCapturing(false);
     stopDetectionLoop();
     stopWebcam();
     
-    if (detections.length > 0) {
-      const newDemographics = { ...demographics };
-      
-      detections.forEach(det => {
-        if (det.gender === 'male') newDemographics.male++;
-        else newDemographics.female++;
-        
-        if (det.ageGroup === 'young') newDemographics.young++;
-        else newDemographics.adult++;
-      });
+    // Log final demographics for this session
+    addLog('info', `📊 Final count: M${demographics.male}/F${demographics.female}, Young${demographics.young}/Adult${demographics.adult}`);
 
-      setDemographics(newDemographics);
-      addLog('info', `📊 Demographics updated: M${newDemographics.male}/F${newDemographics.female}, Young${newDemographics.young}/Adult${newDemographics.adult}`);
-
-      reorderQueue(newDemographics);
+    // Reorder queue based on current demographics
+    if (demographics.male + demographics.female > 0) {
+      reorderQueue(demographics);
     }
 
     const nextAd = getNextAd();
     if (nextAd) {
-      // Apply current capture settings to next ad
       const adWithWindow = {
         ...nextAd,
         captureStart: Math.floor(nextAd.duration * captureSettings.startPercent / 100),
