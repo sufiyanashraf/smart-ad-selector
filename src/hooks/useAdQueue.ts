@@ -53,41 +53,31 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
     const dominantGender = demographics.male >= demographics.female ? 'male' : 'female';
     const dominantAge = demographics.young >= demographics.adult ? 'young' : 'adult';
 
-    // Gender matching - higher scores
-    if (ad.gender === 'all') {
-      score += 1;
-      reasons.push('Universal gender');
-    } else if (ad.gender === dominantGender) {
-      score += 3; // Increased from 2
-      reasons.push(`✓ Matches ${dominantGender}`);
-    } else {
-      score -= 1; // Penalty for mismatch
-      reasons.push(`✗ Targets ${ad.gender}`);
-    }
+    // Perfect match bonus - both gender AND age match
+    const genderMatches = ad.gender === dominantGender || ad.gender === 'all';
+    const ageMatches = ad.ageGroup === dominantAge || ad.ageGroup === 'all';
 
-    // Age matching - higher scores
-    if (ad.ageGroup === 'all') {
-      score += 1;
-      reasons.push('Universal age');
+    if (ad.gender === dominantGender && ad.ageGroup === dominantAge) {
+      score += 10; // Perfect match - highest priority
+      reasons.push(`★ Perfect match: ${dominantGender} + ${dominantAge}`);
+    } else if (genderMatches && ageMatches) {
+      score += 5; // Both match but one is 'all'
+      reasons.push(`✓ Matches both criteria`);
+    } else if (ad.gender === dominantGender) {
+      score += 3;
+      reasons.push(`✓ Matches ${dominantGender}`);
     } else if (ad.ageGroup === dominantAge) {
-      score += 3; // Increased from 2
+      score += 3;
       reasons.push(`✓ Matches ${dominantAge}`);
     } else {
-      score -= 1; // Penalty for mismatch
-      reasons.push(`✗ Targets ${ad.ageGroup}`);
+      score -= 5; // Neither matches
+      reasons.push(`✗ No match`);
     }
 
-    // Penalty for recently played - avoid immediate repeat
+    // Penalty for recently played
     if (ad.id === lastPlayedIdRef.current) {
-      score -= 5; // Heavy penalty to avoid same ad twice
-      reasons.push('Just played (-5)');
-    } else {
-      const recentIndex = playedAds.indexOf(ad.id);
-      if (recentIndex !== -1 && recentIndex < 3) {
-        const penalty = 3 - recentIndex;
-        score -= penalty;
-        reasons.push(`Recently played (-${penalty})`);
-      }
+      score -= 3;
+      reasons.push('Just played (-3)');
     }
 
     return { ad, score, reasons };
@@ -96,25 +86,32 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
   const reorderQueue = useCallback((demographics: DemographicCounts) => {
     console.log('[Queue] Reordering based on demographics:', demographics);
     
-    setQueue(currentQueue => {
-      const scoredAds = currentQueue.map(ad => scoreAd(ad, demographics));
-      
-      // Sort by score descending
-      scoredAds.sort((a, b) => b.score - a.score);
+    // Score ALL available ads (from initial pool)
+    const allAds = customAds && customAds.length > 0 ? customAds : sampleAds;
+    const adsWithCapture = allAds.map(ad => ({
+      ...ad,
+      captureStart: Math.floor(ad.duration * captureStartPercent / 100),
+      captureEnd: Math.floor(ad.duration * captureEndPercent / 100),
+    }));
 
-      const newQueue = scoredAds.map(s => s.ad);
-      
-      // Log the reordering
-      const topAd = scoredAds[0];
-      if (topAd) {
-        console.log('[Queue] New order:', scoredAds.map(s => `${s.ad.title}(${s.score})`).join(' > '));
-        addLog('queue', `🔄 Queue reordered for ${demographics.male > demographics.female ? 'male' : 'female'} ${demographics.young > demographics.adult ? 'young' : 'adult'} audience`);
-        addLog('queue', `Top pick: "${topAd.ad.title}" (score: ${topAd.score})`);
-      }
+    const scoredAds = adsWithCapture.map(ad => scoreAd(ad, demographics));
+    
+    // Sort by score descending
+    scoredAds.sort((a, b) => b.score - a.score);
 
-      return newQueue;
-    });
-  }, [scoreAd, addLog]);
+    // Take only top 2 ads for the queue
+    const top2 = scoredAds.slice(0, 2).map(s => s.ad);
+    
+    // Log the reordering
+    const topAd = scoredAds[0];
+    if (topAd) {
+      console.log('[Queue] New queue (max 2):', scoredAds.slice(0, 2).map(s => `${s.ad.title}(${s.score})`).join(' > '));
+      addLog('queue', `🔄 Queue updated for ${demographics.male > demographics.female ? 'male' : 'female'} ${demographics.young > demographics.adult ? 'young' : 'adult'}`);
+      addLog('queue', `Next: "${topAd.ad.title}" (score: ${topAd.score})`);
+    }
+
+    setQueue(top2);
+  }, [scoreAd, addLog, customAds, captureStartPercent, captureEndPercent]);
 
   const getNextAd = useCallback((): AdMetadata | null => {
     if (queue.length === 0) {
