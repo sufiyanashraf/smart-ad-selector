@@ -23,8 +23,9 @@ const SmartAdsSystem = () => {
   });
   const [recentDetections, setRecentDetections] = useState<DetectionResult[]>([]);
   
-  const captureIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const captureIntervalRef = useRef<number | null>(null);
   const adDetectionsRef = useRef<DetectionResult[]>([]);
+  const isCapturingRef = useRef(false);
 
   const { videoRef, isActive: webcamActive, hasPermission, error: webcamError, startWebcam, stopWebcam } = useWebcam();
   const { isModelLoaded, isLoading: modelsLoading, detectFaces } = useFaceDetection();
@@ -36,10 +37,40 @@ const SmartAdsSystem = () => {
     if (firstAd) {
       setCurrentAd(firstAd);
       setIsPlaying(true);
+      addLog('ad', `Starting system with: "${firstAd.title}"`);
+      addLog('info', `Capture window: ${firstAd.captureStart}s - ${firstAd.captureEnd}s`);
     }
   }, []);
 
-  // Capture window logic
+  // Start detection loop when capturing
+  const startDetectionLoop = useCallback(() => {
+    if (captureIntervalRef.current) {
+      window.clearInterval(captureIntervalRef.current);
+    }
+
+    // Run detection every 1.5 seconds
+    captureIntervalRef.current = window.setInterval(async () => {
+      if (!isCapturingRef.current || !videoRef.current) return;
+
+      console.log('[Loop] Running detection...');
+      const results = await detectFaces(videoRef.current);
+      
+      if (results.length > 0) {
+        adDetectionsRef.current.push(...results);
+        setRecentDetections(prev => [...results, ...prev].slice(0, 10));
+        addLog('detection', `Detected ${results.length} viewer(s): ${results.map(r => `${r.gender}/${r.age}y`).join(', ')}`);
+      }
+    }, 1500);
+  }, [detectFaces, addLog, videoRef]);
+
+  const stopDetectionLoop = useCallback(() => {
+    if (captureIntervalRef.current) {
+      window.clearInterval(captureIntervalRef.current);
+      captureIntervalRef.current = null;
+    }
+  }, []);
+
+  // Capture window logic - check every time currentTime updates
   useEffect(() => {
     if (!currentAd || !isPlaying) return;
 
@@ -47,44 +78,48 @@ const SmartAdsSystem = () => {
       currentTime >= currentAd.captureStart && 
       currentTime <= currentAd.captureEnd;
 
-    if (inCaptureWindow && !isCapturing) {
-      // Start capturing
+    if (inCaptureWindow && !isCapturingRef.current) {
+      // START capturing
+      console.log('[Capture] Starting capture window');
+      isCapturingRef.current = true;
       setIsCapturing(true);
-      addLog('webcam', `Capture window started (${currentAd.captureStart}s - ${currentAd.captureEnd}s)`);
-      startWebcam();
       adDetectionsRef.current = [];
-
-      // Start frame sampling (1 fps)
-      captureIntervalRef.current = setInterval(async () => {
-        if (videoRef.current && videoRef.current.readyState >= 2) {
-          const results = await detectFaces(videoRef.current);
-          
-          if (results.length > 0) {
-            adDetectionsRef.current.push(...results);
-            setRecentDetections(prev => [...results, ...prev].slice(0, 10));
-            addLog('detection', `Detected ${results.length} face(s): ${results.map(r => `${r.gender}/${r.age}y`).join(', ')}`);
-          }
+      
+      addLog('webcam', `📷 CAPTURE STARTED (${currentAd.captureStart}s - ${currentAd.captureEnd}s)`);
+      
+      startWebcam().then((success) => {
+        if (success) {
+          addLog('webcam', 'Camera activated, scanning for viewers...');
+          // Wait a moment for camera to initialize, then start detection
+          setTimeout(() => {
+            startDetectionLoop();
+          }, 500);
+        } else {
+          addLog('webcam', 'Camera unavailable, using simulated detection');
+          startDetectionLoop();
         }
-      }, 1000);
+      });
 
-    } else if (!inCaptureWindow && isCapturing) {
-      // Stop capturing
+    } else if (!inCaptureWindow && isCapturingRef.current) {
+      // STOP capturing
+      console.log('[Capture] Ending capture window');
+      isCapturingRef.current = false;
       setIsCapturing(false);
-      addLog('webcam', 'Capture window ended, webcam off');
+      
+      stopDetectionLoop();
       stopWebcam();
       
-      if (captureIntervalRef.current) {
-        clearInterval(captureIntervalRef.current);
-        captureIntervalRef.current = null;
-      }
+      const detectionCount = adDetectionsRef.current.length;
+      addLog('webcam', `📷 CAPTURE ENDED - ${detectionCount} total detections`);
     }
+  }, [currentTime, currentAd, isPlaying, startWebcam, stopWebcam, startDetectionLoop, stopDetectionLoop, addLog]);
 
+  // Cleanup on unmount
+  useEffect(() => {
     return () => {
-      if (captureIntervalRef.current) {
-        clearInterval(captureIntervalRef.current);
-      }
+      stopDetectionLoop();
     };
-  }, [currentTime, currentAd, isPlaying, isCapturing, startWebcam, stopWebcam, detectFaces, addLog, videoRef]);
+  }, [stopDetectionLoop]);
 
   const handleTimeUpdate = useCallback((time: number) => {
     setCurrentTime(time);
@@ -93,6 +128,12 @@ const SmartAdsSystem = () => {
   const handleAdEnded = useCallback(() => {
     // Process detections from this ad
     const detections = adDetectionsRef.current;
+    
+    // Stop any ongoing capture
+    isCapturingRef.current = false;
+    setIsCapturing(false);
+    stopDetectionLoop();
+    stopWebcam();
     
     if (detections.length > 0) {
       const newDemographics = { ...demographics };
@@ -106,18 +147,10 @@ const SmartAdsSystem = () => {
       });
 
       setDemographics(newDemographics);
-      addLog('detection', `Ad finished. Updated demographics: M${newDemographics.male}/F${newDemographics.female}, Y${newDemographics.young}/A${newDemographics.adult}`);
+      addLog('info', `📊 Demographics updated: M${newDemographics.male}/F${newDemographics.female}, Young${newDemographics.young}/Adult${newDemographics.adult}`);
 
       // Reorder queue based on new demographics
       reorderQueue(newDemographics);
-    }
-
-    // Stop any ongoing capture
-    setIsCapturing(false);
-    stopWebcam();
-    if (captureIntervalRef.current) {
-      clearInterval(captureIntervalRef.current);
-      captureIntervalRef.current = null;
     }
 
     // Play next ad
@@ -126,11 +159,13 @@ const SmartAdsSystem = () => {
       setCurrentAd(nextAd);
       setCurrentTime(0);
       setIsPlaying(true);
+      addLog('ad', `▶️ Now playing: "${nextAd.title}"`);
+      addLog('info', `Capture window: ${nextAd.captureStart}s - ${nextAd.captureEnd}s`);
     }
-  }, [demographics, getNextAd, reorderQueue, stopWebcam, addLog]);
+  }, [demographics, getNextAd, reorderQueue, stopWebcam, stopDetectionLoop, addLog]);
 
   const handleSkip = useCallback(() => {
-    addLog('ad', `Skipped: "${currentAd?.title}"`);
+    addLog('ad', `⏭️ Skipped: "${currentAd?.title}"`);
     handleAdEnded();
   }, [currentAd, handleAdEnded, addLog]);
 
@@ -151,14 +186,14 @@ const SmartAdsSystem = () => {
             Smart<span className="text-primary">Ads</span> System
           </h1>
           <div className="ml-auto flex items-center gap-2 text-sm">
-            <Activity className="h-4 w-4 text-success" />
+            <Activity className={`h-4 w-4 ${isCapturing ? 'text-destructive animate-pulse' : 'text-success'}`} />
             <span className="text-muted-foreground">
-              {modelsLoading ? 'Loading AI models...' : isModelLoaded ? 'AI Ready' : 'Demo Mode'}
+              {modelsLoading ? 'Loading AI...' : isModelLoaded ? 'AI Ready' : 'Demo Mode'}
             </span>
           </div>
         </div>
         <p className="text-muted-foreground text-sm">
-          Dynamic ad targeting powered by real-time demographic detection
+          Dynamic ad targeting powered by real-time demographic detection • Camera activates at 75% of ad duration
         </p>
       </header>
 
@@ -214,13 +249,9 @@ const SmartAdsSystem = () => {
               face-api.js for detection
             </span>
             <span>•</span>
-            <span>Webcam active only during capture window</span>
+            <span>Camera activates at 75% of ad, closes at 92%</span>
           </div>
           <div className="flex gap-4">
-            {/* TODO: Cloud analytics integration */}
-            {/* TODO: Multiple screen support */}
-            {/* TODO: Privacy masking (face blur) */}
-            {/* TODO: Raspberry Pi optimization */}
             <span>Prototype v1.0</span>
           </div>
         </div>
