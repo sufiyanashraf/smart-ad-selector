@@ -8,7 +8,7 @@ import { WebcamPreview } from '@/components/WebcamPreview';
 import { SettingsPanel, CaptureSettings } from '@/components/SettingsPanel';
 import { AdManager } from '@/components/AdManager';
 import { useWebcam } from '@/hooks/useWebcam';
-import { useFaceDetection } from '@/hooks/useFaceDetection';
+import { useFaceDetection, resetSimulatedPerson } from '@/hooks/useFaceDetection';
 import { useAdQueue } from '@/hooks/useAdQueue';
 import { sampleAds } from '@/data/sampleAds';
 import { Tv, Zap, Activity } from 'lucide-react';
@@ -42,12 +42,12 @@ const SmartAdsSystem = () => {
     young: 0,
     adult: 0,
   });
-  const [recentDetections, setRecentDetections] = useState<DetectionResult[]>([]);
+  const [currentViewers, setCurrentViewers] = useState<DetectionResult[]>([]);
   
   const captureIntervalRef = useRef<number | null>(null);
-  const adDetectionsRef = useRef<DetectionResult[]>([]);
   const isCapturingRef = useRef(false);
   const initializedRef = useRef(false);
+  const lastDemographicsRef = useRef<DemographicCounts>({ male: 0, female: 0, young: 0, adult: 0 });
 
   const { videoRef, isActive: webcamActive, hasPermission, error: webcamError, startWebcam, stopWebcam } = useWebcam();
   const { isModelLoaded, isLoading: modelsLoading, detectFaces } = useFaceDetection();
@@ -88,7 +88,7 @@ const SmartAdsSystem = () => {
     addLog('info', `📁 Ad library updated: ${newAds.length} ads`);
   }, [addLog]);
 
-  // Start detection loop when capturing
+  // Start detection loop - detects current viewers in frame
   const startDetectionLoop = useCallback(() => {
     if (captureIntervalRef.current) {
       window.clearInterval(captureIntervalRef.current);
@@ -101,20 +101,20 @@ const SmartAdsSystem = () => {
       const results = await detectFaces(videoRef.current);
       
       if (results.length > 0) {
-        adDetectionsRef.current.push(...results);
-        setRecentDetections(prev => [...results, ...prev].slice(0, 10));
+        // Update current viewers with LATEST detection (not accumulating)
+        setCurrentViewers(results);
         
-        // Update demographics in real-time with current session data
-        const allDetections = adDetectionsRef.current;
-        const newDemographics = {
-          male: allDetections.filter(d => d.gender === 'male').length,
-          female: allDetections.filter(d => d.gender === 'female').length,
-          young: allDetections.filter(d => d.ageGroup === 'young').length,
-          adult: allDetections.filter(d => d.ageGroup === 'adult').length,
+        // Calculate demographics from current detection
+        const newDemographics: DemographicCounts = {
+          male: results.filter(d => d.gender === 'male').length,
+          female: results.filter(d => d.gender === 'female').length,
+          young: results.filter(d => d.ageGroup === 'young').length,
+          adult: results.filter(d => d.ageGroup === 'adult').length,
         };
         setDemographics(newDemographics);
+        lastDemographicsRef.current = newDemographics;
         
-        addLog('detection', `Detected ${results.length} viewer(s): ${results.map(r => `${r.gender}/${r.age}y`).join(', ')}`);
+        addLog('detection', `👁️ ${results.length} viewer(s): ${results.map(r => `${r.gender}/${r.age}y (${(r.confidence * 100).toFixed(0)}%)`).join(', ')}`);
       }
     }, 1500);
   }, [detectFaces, addLog, videoRef]);
@@ -138,23 +138,23 @@ const SmartAdsSystem = () => {
       console.log('[Capture] Starting capture window');
       isCapturingRef.current = true;
       setIsCapturing(true);
-      adDetectionsRef.current = [];
       
-      // RESET demographics to zero when capture starts
+      // Reset for new capture session
       setDemographics({ male: 0, female: 0, young: 0, adult: 0 });
-      setRecentDetections([]);
+      setCurrentViewers([]);
+      resetSimulatedPerson(); // Reset simulated person for fresh detection
       
       addLog('webcam', `📷 CAPTURE STARTED (${currentAd.captureStart}s - ${currentAd.captureEnd}s)`);
-      addLog('info', '🔄 Demographics reset - scanning for current viewers...');
+      addLog('info', '🔄 Scanning for current viewers...');
       
       startWebcam().then((success) => {
         if (success) {
-          addLog('webcam', 'Camera activated, scanning for viewers...');
+          addLog('webcam', 'Camera activated');
           setTimeout(() => {
             startDetectionLoop();
           }, 500);
         } else {
-          addLog('webcam', 'Camera unavailable, using simulated detection');
+          addLog('webcam', 'Camera unavailable, using simulation');
           startDetectionLoop();
         }
       });
@@ -167,10 +167,16 @@ const SmartAdsSystem = () => {
       stopDetectionLoop();
       stopWebcam();
       
-      const detectionCount = adDetectionsRef.current.length;
-      addLog('webcam', `📷 CAPTURE ENDED - ${detectionCount} total detections`);
+      addLog('webcam', `📷 CAPTURE ENDED`);
+      
+      // Log and reorder based on detected demographics
+      const demo = lastDemographicsRef.current;
+      if (demo.male + demo.female > 0) {
+        addLog('info', `📊 Detected: ${demo.male}M/${demo.female}F, ${demo.young} young/${demo.adult} adult`);
+        reorderQueue(demo);
+      }
     }
-  }, [currentTime, currentAd, isPlaying, startWebcam, stopWebcam, startDetectionLoop, stopDetectionLoop, addLog]);
+  }, [currentTime, currentAd, isPlaying, startWebcam, stopWebcam, startDetectionLoop, stopDetectionLoop, addLog, reorderQueue]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -188,14 +194,6 @@ const SmartAdsSystem = () => {
     setIsCapturing(false);
     stopDetectionLoop();
     stopWebcam();
-    
-    // Log final demographics for this session
-    addLog('info', `📊 Final count: M${demographics.male}/F${demographics.female}, Young${demographics.young}/Adult${demographics.adult}`);
-
-    // Reorder queue based on current demographics
-    if (demographics.male + demographics.female > 0) {
-      reorderQueue(demographics);
-    }
 
     const nextAd = getNextAd();
     if (nextAd) {
@@ -207,10 +205,9 @@ const SmartAdsSystem = () => {
       setCurrentAd(adWithWindow);
       setCurrentTime(0);
       setIsPlaying(true);
-      addLog('ad', `▶️ Now playing: "${adWithWindow.title}"`);
       addLog('info', `Capture window: ${adWithWindow.captureStart}s - ${adWithWindow.captureEnd}s`);
     }
-  }, [demographics, getNextAd, reorderQueue, stopWebcam, stopDetectionLoop, addLog, captureSettings]);
+  }, [getNextAd, stopWebcam, stopDetectionLoop, addLog, captureSettings]);
 
   const handleSkip = useCallback(() => {
     addLog('ad', `⏭️ Skipped: "${currentAd?.title}"`);
@@ -289,7 +286,7 @@ const SmartAdsSystem = () => {
         <div className="lg:col-span-5 space-y-6">
           <DemographicStats
             demographics={demographics}
-            recentDetections={recentDetections}
+            recentDetections={currentViewers}
             isCapturing={isCapturing}
           />
           
