@@ -1,6 +1,7 @@
 import { AdMetadata } from '@/types/ad';
 
 // Sample ads with royalty-free video URLs for demonstration
+// Capture window is set to 75%-90% of ad duration (near the end)
 export const sampleAds: AdMetadata[] = [
   {
     id: 'ad-001',
@@ -9,8 +10,8 @@ export const sampleAds: AdMetadata[] = [
     gender: 'male',
     ageGroup: 'young',
     duration: 15,
-    captureStart: 3,
-    captureEnd: 10,
+    captureStart: 11, // 75% of 15s
+    captureEnd: 14,   // 93% of 15s
     videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
   },
   {
@@ -19,9 +20,9 @@ export const sampleAds: AdMetadata[] = [
     title: 'Elegance Fashion',
     gender: 'female',
     ageGroup: 'adult',
-    duration: 12,
-    captureStart: 2,
-    captureEnd: 8,
+    duration: 15,
+    captureStart: 11,
+    captureEnd: 14,
     videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
   },
   {
@@ -30,9 +31,9 @@ export const sampleAds: AdMetadata[] = [
     title: 'PowerBoost Energy',
     gender: 'male',
     ageGroup: 'young',
-    duration: 10,
-    captureStart: 2,
-    captureEnd: 7,
+    duration: 15,
+    captureStart: 11,
+    captureEnd: 14,
     videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',
   },
   {
@@ -41,9 +42,9 @@ export const sampleAds: AdMetadata[] = [
     title: 'GlowUp Skincare',
     gender: 'female',
     ageGroup: 'young',
-    duration: 14,
-    captureStart: 3,
-    captureEnd: 10,
+    duration: 15,
+    captureStart: 11,
+    captureEnd: 14,
     videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
   },
   {
@@ -52,9 +53,9 @@ export const sampleAds: AdMetadata[] = [
     title: 'WealthGuard Insurance',
     gender: 'all',
     ageGroup: 'adult',
-    duration: 16,
-    captureStart: 4,
-    captureEnd: 12,
+    duration: 15,
+    captureStart: 11,
+    captureEnd: 14,
     videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4',
   },
   {
@@ -63,12 +64,18 @@ export const sampleAds: AdMetadata[] = [
     title: 'NexGen Gaming',
     gender: 'all',
     ageGroup: 'young',
-    duration: 11,
-    captureStart: 2,
-    captureEnd: 8,
-    videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4',
+    duration: 15,
+    captureStart: 11,
+    captureEnd: 14,
+    videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
   },
 ];
+
+// Helper to calculate capture window (75% to 92% of duration)
+export const calculateCaptureWindow = (duration: number) => ({
+  start: Math.floor(duration * 0.75),
+  end: Math.floor(duration * 0.92),
+});
 
 export const getAdById = (id: string): AdMetadata | undefined => {
   return sampleAds.find(ad => ad.id === id);
