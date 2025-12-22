@@ -42,7 +42,6 @@ export const useFaceDetection = () => {
   const detectFaces = useCallback(async (
     videoElement: HTMLVideoElement
   ): Promise<DetectionResult[]> => {
-    // Always run detection - use real if models loaded, simulate otherwise
     if (!videoElement) {
       console.log('[Detection] No video element');
       return [];
@@ -50,12 +49,14 @@ export const useFaceDetection = () => {
 
     if (videoElement.readyState < 2) {
       console.log('[Detection] Video not ready, readyState:', videoElement.readyState);
-      return simulateDetection();
+      // Return single simulated person when video not ready
+      return simulateSinglePerson();
     }
 
     if (!isModelLoaded) {
       console.log('[Detection] Models not loaded, using simulation');
-      return simulateDetection();
+      // Simulate detecting the ONE person in front of camera
+      return simulateSinglePerson();
     }
 
     try {
@@ -73,9 +74,9 @@ export const useFaceDetection = () => {
       console.log('[Detection] Found', detections.length, 'faces');
 
       if (detections.length === 0) {
-        // If no faces found with real detection, simulate for demo
-        console.log('[Detection] No faces found, simulating for demo');
-        return simulateDetection();
+        // If no faces found with real detection, simulate one person for demo
+        console.log('[Detection] No faces found, simulating one person for demo');
+        return simulateSinglePerson();
       }
 
       return detections.map(detection => ({
@@ -86,31 +87,42 @@ export const useFaceDetection = () => {
       }));
     } catch (err) {
       console.error('[Detection] Error:', err);
-      return simulateDetection();
+      return simulateSinglePerson();
     }
   }, [isModelLoaded]);
 
   return { isModelLoaded, isLoading, error, detectFaces };
 };
 
-// Simulated detection for demo purposes
-const simulateDetection = (): DetectionResult[] => {
-  // Random chance to detect 1-3 people
-  const numFaces = Math.floor(Math.random() * 3) + 1;
-  const results: DetectionResult[] = [];
-  
-  for (let i = 0; i < numFaces; i++) {
+// Simulate detecting ONE person (the user) with consistent attributes
+// Use a stable random seed per session to simulate the same person
+let simulatedPerson: DetectionResult | null = null;
+
+const simulateSinglePerson = (): DetectionResult[] => {
+  // Create a stable simulated person for this session
+  if (!simulatedPerson) {
     const isMale = Math.random() > 0.5;
-    const age = Math.floor(Math.random() * 40) + 18; // 18-58 years
+    const age = Math.floor(Math.random() * 30) + 20; // 20-50 years
     
-    results.push({
+    simulatedPerson = {
       gender: isMale ? 'male' : 'female',
       age,
       ageGroup: age < 35 ? 'young' : 'adult',
-      confidence: 0.75 + Math.random() * 0.2, // 75-95% confidence
-    });
+      confidence: 0.85 + Math.random() * 0.1, // 85-95% confidence
+    };
   }
-  
-  console.log('[Detection] Simulated:', results.map(r => `${r.gender}/${r.age}y`).join(', '));
-  return results;
+
+  // Add slight variation to confidence each detection
+  const result: DetectionResult = {
+    ...simulatedPerson,
+    confidence: Math.max(0.7, Math.min(0.95, simulatedPerson.confidence + (Math.random() - 0.5) * 0.1)),
+  };
+
+  console.log('[Detection] Simulated:', `${result.gender}/${result.age}y (${(result.confidence * 100).toFixed(0)}%)`);
+  return [result];
+};
+
+// Reset simulated person (call when needed)
+export const resetSimulatedPerson = () => {
+  simulatedPerson = null;
 };

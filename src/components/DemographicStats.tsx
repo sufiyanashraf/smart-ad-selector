@@ -1,5 +1,5 @@
 import { DemographicCounts, DetectionResult } from '@/types/ad';
-import { Users, User, UserCircle2, Baby, Briefcase } from 'lucide-react';
+import { Users, User, UserCircle2, Baby, Briefcase, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface DemographicStatsProps {
@@ -18,6 +18,11 @@ export const DemographicStats = ({
 
   const malePercent = totalGender > 0 ? (demographics.male / totalGender) * 100 : 50;
   const youngPercent = totalAge > 0 ? (demographics.young / totalAge) * 100 : 50;
+
+  // Get average confidence
+  const avgConfidence = recentDetections.length > 0 
+    ? recentDetections.reduce((sum, d) => sum + d.confidence, 0) / recentDetections.length
+    : 0;
 
   return (
     <div className="glass-card p-6 space-y-6">
@@ -42,7 +47,7 @@ export const DemographicStats = ({
         <div className="flex items-center justify-between text-sm">
           <span className="text-muted-foreground">Gender Distribution</span>
           <span className="font-display font-medium">
-            {totalGender} detected
+            {totalGender} viewer{totalGender !== 1 ? 's' : ''}
           </span>
         </div>
         
@@ -52,7 +57,7 @@ export const DemographicStats = ({
             label="Male"
             value={demographics.male}
             color="primary"
-            isActive={demographics.male >= demographics.female}
+            isActive={demographics.male >= demographics.female && totalGender > 0}
           />
           <StatCard
             icon={<UserCircle2 className="h-5 w-5" />}
@@ -80,7 +85,7 @@ export const DemographicStats = ({
         <div className="flex items-center justify-between text-sm">
           <span className="text-muted-foreground">Age Distribution</span>
           <span className="font-display font-medium">
-            {totalAge} detected
+            {totalAge} viewer{totalAge !== 1 ? 's' : ''}
           </span>
         </div>
         
@@ -91,7 +96,7 @@ export const DemographicStats = ({
             sublabel="< 35 years"
             value={demographics.young}
             color="success"
-            isActive={demographics.young >= demographics.adult}
+            isActive={demographics.young >= demographics.adult && totalAge > 0}
           />
           <StatCard
             icon={<Briefcase className="h-5 w-5" />}
@@ -115,30 +120,16 @@ export const DemographicStats = ({
         </div>
       </div>
 
-      {/* Recent Detections */}
+      {/* Recent Detections with Confidence */}
       {recentDetections.length > 0 && (
         <div className="space-y-3">
-          <h4 className="text-sm text-muted-foreground">Recent Detections</h4>
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm text-muted-foreground">Current Viewers</h4>
+            <ConfidenceBadge confidence={avgConfidence} />
+          </div>
           <div className="flex flex-wrap gap-2">
-            {recentDetections.slice(0, 5).map((det, i) => (
-              <div
-                key={i}
-                className={cn(
-                  "px-2.5 py-1 rounded-full text-xs font-medium flex items-center gap-1.5 animate-slide-up",
-                  det.gender === 'male' 
-                    ? 'bg-primary/20 text-primary' 
-                    : 'bg-accent/20 text-accent'
-                )}
-                style={{ animationDelay: `${i * 50}ms` }}
-              >
-                <Users className="h-3 w-3" />
-                <span className="capitalize">{det.gender}</span>
-                <span className="text-muted-foreground">•</span>
-                <span>{det.age}y</span>
-                <span className="text-muted-foreground/60">
-                  ({(det.confidence * 100).toFixed(0)}%)
-                </span>
-              </div>
+            {recentDetections.map((det, i) => (
+              <DetectionBadge key={i} detection={det} index={i} />
             ))}
           </div>
         </div>
@@ -186,6 +177,87 @@ const StatCard = ({ icon, label, sublabel, value, color, isActive }: StatCardPro
       )}>
         {value}
       </div>
+    </div>
+  );
+};
+
+interface DetectionBadgeProps {
+  detection: DetectionResult;
+  index: number;
+}
+
+const DetectionBadge = ({ detection, index }: DetectionBadgeProps) => {
+  const isLowConfidence = detection.confidence < 0.75;
+  const isMediumConfidence = detection.confidence >= 0.75 && detection.confidence < 0.85;
+  
+  return (
+    <div
+      className={cn(
+        "px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 animate-slide-up border",
+        detection.gender === 'male' 
+          ? 'bg-primary/10 border-primary/30' 
+          : 'bg-accent/10 border-accent/30',
+        isLowConfidence && 'opacity-60 border-dashed',
+        isMediumConfidence && 'opacity-80'
+      )}
+      style={{ animationDelay: `${index * 50}ms` }}
+    >
+      {isLowConfidence && (
+        <AlertTriangle className="h-3 w-3 text-warning" />
+      )}
+      <Users className={cn(
+        "h-3 w-3",
+        detection.gender === 'male' ? 'text-primary' : 'text-accent'
+      )} />
+      <span className={cn(
+        "capitalize",
+        detection.gender === 'male' ? 'text-primary' : 'text-accent'
+      )}>
+        {detection.gender}
+      </span>
+      <span className="text-muted-foreground">•</span>
+      <span className={cn(
+        detection.ageGroup === 'young' ? 'text-success' : 'text-warning'
+      )}>
+        {detection.age}y
+      </span>
+      <span className={cn(
+        "ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold",
+        detection.confidence >= 0.85 
+          ? 'bg-success/20 text-success'
+          : detection.confidence >= 0.75
+            ? 'bg-warning/20 text-warning'
+            : 'bg-destructive/20 text-destructive'
+      )}>
+        {(detection.confidence * 100).toFixed(0)}%
+      </span>
+    </div>
+  );
+};
+
+interface ConfidenceBadgeProps {
+  confidence: number;
+}
+
+const ConfidenceBadge = ({ confidence }: ConfidenceBadgeProps) => {
+  const getLabel = () => {
+    if (confidence >= 0.85) return 'High Confidence';
+    if (confidence >= 0.75) return 'Medium Confidence';
+    return 'Low Confidence';
+  };
+
+  return (
+    <div className={cn(
+      "flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium",
+      confidence >= 0.85 
+        ? 'bg-success/20 text-success'
+        : confidence >= 0.75
+          ? 'bg-warning/20 text-warning'
+          : 'bg-destructive/20 text-destructive'
+    )}>
+      {confidence < 0.75 && <AlertTriangle className="h-3 w-3" />}
+      <span>{getLabel()}</span>
+      <span className="font-bold">{(confidence * 100).toFixed(0)}%</span>
     </div>
   );
 };

@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import { AdMetadata, DemographicCounts, AdScore, LogEntry } from '@/types/ad';
 import { sampleAds } from '@/data/sampleAds';
 
@@ -15,10 +15,8 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
     captureEndPercent = 92 
   } = props || {};
 
-  // Use custom ads if provided, otherwise use sample ads
   const initialAds = useMemo(() => {
     const ads = customAds && customAds.length > 0 ? customAds : sampleAds;
-    // Recalculate capture windows based on settings
     return ads.map(ad => ({
       ...ad,
       captureStart: Math.floor(ad.duration * captureStartPercent / 100),
@@ -29,8 +27,8 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
   const [queue, setQueue] = useState<AdMetadata[]>(initialAds);
   const [playedAds, setPlayedAds] = useState<string[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const lastPlayedIdRef = useRef<string | null>(null);
 
-  // Update queue when ads or settings change
   const updateQueue = useCallback((ads: AdMetadata[]) => {
     const updatedAds = ads.map(ad => ({
       ...ad,
@@ -55,59 +53,96 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
     const dominantGender = demographics.male >= demographics.female ? 'male' : 'female';
     const dominantAge = demographics.young >= demographics.adult ? 'young' : 'adult';
 
+    // Gender matching - higher scores
     if (ad.gender === 'all') {
       score += 1;
-      reasons.push('Universal gender appeal');
+      reasons.push('Universal gender');
     } else if (ad.gender === dominantGender) {
-      score += 2;
-      reasons.push(`Matches dominant gender (${dominantGender})`);
+      score += 3; // Increased from 2
+      reasons.push(`✓ Matches ${dominantGender}`);
+    } else {
+      score -= 1; // Penalty for mismatch
+      reasons.push(`✗ Targets ${ad.gender}`);
     }
 
+    // Age matching - higher scores
     if (ad.ageGroup === 'all') {
       score += 1;
-      reasons.push('Universal age appeal');
+      reasons.push('Universal age');
     } else if (ad.ageGroup === dominantAge) {
-      score += 2;
-      reasons.push(`Matches dominant age group (${dominantAge})`);
+      score += 3; // Increased from 2
+      reasons.push(`✓ Matches ${dominantAge}`);
+    } else {
+      score -= 1; // Penalty for mismatch
+      reasons.push(`✗ Targets ${ad.ageGroup}`);
     }
 
-    const recentIndex = playedAds.indexOf(ad.id);
-    if (recentIndex !== -1) {
-      const penalty = Math.max(0, 3 - recentIndex);
-      score -= penalty;
-      if (penalty > 0) reasons.push(`Recently played (-${penalty})`);
+    // Penalty for recently played - avoid immediate repeat
+    if (ad.id === lastPlayedIdRef.current) {
+      score -= 5; // Heavy penalty to avoid same ad twice
+      reasons.push('Just played (-5)');
+    } else {
+      const recentIndex = playedAds.indexOf(ad.id);
+      if (recentIndex !== -1 && recentIndex < 3) {
+        const penalty = 3 - recentIndex;
+        score -= penalty;
+        reasons.push(`Recently played (-${penalty})`);
+      }
     }
 
     return { ad, score, reasons };
   }, [playedAds]);
 
   const reorderQueue = useCallback((demographics: DemographicCounts) => {
-    const scoredAds = queue.map(ad => scoreAd(ad, demographics));
-    scoredAds.sort((a, b) => b.score - a.score);
-    const newQueue = scoredAds.map(s => s.ad);
-    setQueue(newQueue);
+    console.log('[Queue] Reordering based on demographics:', demographics);
+    
+    setQueue(currentQueue => {
+      const scoredAds = currentQueue.map(ad => scoreAd(ad, demographics));
+      
+      // Sort by score descending
+      scoredAds.sort((a, b) => b.score - a.score);
 
-    const topAd = scoredAds[0];
-    if (topAd) {
-      addLog('queue', `Queue reordered. Top: "${topAd.ad.title}" (score: ${topAd.score})`);
-      topAd.reasons.forEach(r => addLog('queue', `  └─ ${r}`));
-    }
+      const newQueue = scoredAds.map(s => s.ad);
+      
+      // Log the reordering
+      const topAd = scoredAds[0];
+      if (topAd) {
+        console.log('[Queue] New order:', scoredAds.map(s => `${s.ad.title}(${s.score})`).join(' > '));
+        addLog('queue', `🔄 Queue reordered for ${demographics.male > demographics.female ? 'male' : 'female'} ${demographics.young > demographics.adult ? 'young' : 'adult'} audience`);
+        addLog('queue', `Top pick: "${topAd.ad.title}" (score: ${topAd.score})`);
+      }
 
-    return scoredAds;
-  }, [queue, scoreAd, addLog]);
+      return newQueue;
+    });
+  }, [scoreAd, addLog]);
 
   const getNextAd = useCallback((): AdMetadata | null => {
     if (queue.length === 0) {
       const resetAds = initialAds;
       setQueue(resetAds);
       setPlayedAds([]);
+      lastPlayedIdRef.current = null;
       return resetAds[0] || null;
     }
 
-    const nextAd = queue[0];
-    setQueue(prev => [...prev.slice(1), prev[0]]);
+    // Get the first ad that wasn't just played
+    let nextAd = queue[0];
+    
+    // If top ad was just played, try second option
+    if (nextAd.id === lastPlayedIdRef.current && queue.length > 1) {
+      nextAd = queue[1];
+      // Rotate queue differently
+      setQueue(prev => [prev[1], ...prev.filter((_, i) => i !== 1)]);
+    } else {
+      // Normal rotation - move first to end
+      setQueue(prev => [...prev.slice(1), prev[0]]);
+    }
+    
+    // Track played ads
     setPlayedAds(prev => [nextAd.id, ...prev].slice(0, 5));
-    addLog('ad', `Now playing: "${nextAd.title}"`);
+    lastPlayedIdRef.current = nextAd.id;
+    
+    addLog('ad', `▶️ Playing: "${nextAd.title}"`);
     
     return nextAd;
   }, [queue, initialAds, addLog]);
