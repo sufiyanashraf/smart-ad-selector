@@ -75,7 +75,7 @@ export const AdQueue = ({ queue, currentAdId }: AdQueueProps) => {
 
       <div className="pt-2 border-t border-border">
         <p className="text-xs text-muted-foreground text-center">
-          Queue auto-prioritizes based on detected audience
+          Top 2 ads selected based on detected demographics
         </p>
       </div>
     </div>
