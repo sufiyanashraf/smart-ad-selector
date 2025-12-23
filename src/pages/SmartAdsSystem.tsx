@@ -11,7 +11,8 @@ import { useWebcam } from '@/hooks/useWebcam';
 import { useFaceDetection, resetSimulatedPerson } from '@/hooks/useFaceDetection';
 import { useAdQueue } from '@/hooks/useAdQueue';
 import { sampleAds } from '@/data/sampleAds';
-import { Tv, Zap, Activity } from 'lucide-react';
+import { Tv, Zap, Activity, Play, Square, AlertCircle, CheckCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 const SmartAdsSystem = () => {
   // Settings state
@@ -43,14 +44,16 @@ const SmartAdsSystem = () => {
     adult: 0,
   });
   const [currentViewers, setCurrentViewers] = useState<DetectionResult[]>([]);
+  const [testMode, setTestMode] = useState(false);
   
   const captureIntervalRef = useRef<number | null>(null);
   const isCapturingRef = useRef(false);
   const initializedRef = useRef(false);
   const lastDemographicsRef = useRef<DemographicCounts>({ male: 0, female: 0, young: 0, adult: 0 });
+  const testModeTimeoutRef = useRef<number | null>(null);
 
   const { videoRef, isActive: webcamActive, hasPermission, error: webcamError, startWebcam, stopWebcam } = useWebcam();
-  const { isModelLoaded, isLoading: modelsLoading, detectFaces } = useFaceDetection();
+  const { isModelLoaded, isLoading: modelsLoading, error: modelError, detectFaces } = useFaceDetection();
   const { queue, logs, getNextAd, reorderQueue, addLog, updateQueue } = useAdQueue({
     customAds: adsWithCaptureWindows,
     captureStartPercent: captureSettings.startPercent,
@@ -126,6 +129,51 @@ const SmartAdsSystem = () => {
     }
   }, []);
 
+  // Test mode: manually trigger detection for 30 seconds
+  const startTestMode = useCallback(async () => {
+    if (testMode) return;
+    
+    setTestMode(true);
+    addLog('info', '🧪 TEST MODE: Starting immediate detection (30s)...');
+    
+    // Reset demographics
+    setDemographics({ male: 0, female: 0, young: 0, adult: 0 });
+    setCurrentViewers([]);
+    
+    const success = await startWebcam();
+    if (success) {
+      addLog('webcam', '✅ Camera activated for test');
+      isCapturingRef.current = true;
+      setIsCapturing(true);
+      
+      setTimeout(() => {
+        startDetectionLoop();
+      }, 500);
+      
+      // Auto-stop after 30 seconds
+      testModeTimeoutRef.current = window.setTimeout(() => {
+        stopTestMode();
+      }, 30000);
+    } else {
+      addLog('webcam', '❌ Camera failed to start');
+      setTestMode(false);
+    }
+  }, [testMode, startWebcam, startDetectionLoop, addLog]);
+
+  const stopTestMode = useCallback(() => {
+    if (testModeTimeoutRef.current) {
+      window.clearTimeout(testModeTimeoutRef.current);
+      testModeTimeoutRef.current = null;
+    }
+    
+    stopDetectionLoop();
+    stopWebcam();
+    isCapturingRef.current = false;
+    setIsCapturing(false);
+    setTestMode(false);
+    addLog('info', '🧪 TEST MODE: Ended');
+  }, [stopDetectionLoop, stopWebcam, addLog]);
+
   // Capture window logic
   useEffect(() => {
     if (!currentAd || !isPlaying) return;
@@ -182,6 +230,9 @@ const SmartAdsSystem = () => {
   useEffect(() => {
     return () => {
       stopDetectionLoop();
+      if (testModeTimeoutRef.current) {
+        window.clearTimeout(testModeTimeoutRef.current);
+      }
     };
   }, [stopDetectionLoop]);
 
@@ -231,6 +282,27 @@ const SmartAdsSystem = () => {
             Smart<span className="text-primary">Ads</span> System
           </h1>
           <div className="ml-auto flex items-center gap-3">
+            {/* Test Detection Button */}
+            <Button
+              variant={testMode ? "destructive" : "outline"}
+              size="sm"
+              onClick={testMode ? stopTestMode : startTestMode}
+              disabled={modelsLoading}
+              className="flex items-center gap-2"
+            >
+              {testMode ? (
+                <>
+                  <Square className="h-4 w-4" />
+                  Stop Test
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4" />
+                  Test Detection
+                </>
+              )}
+            </Button>
+            
             <AdManager 
               ads={customAds}
               onAdsChange={handleAdsChange}
@@ -241,16 +313,36 @@ const SmartAdsSystem = () => {
               settings={captureSettings}
               onSettingsChange={handleSettingsChange}
             />
+            
+            {/* Model Status */}
             <div className="flex items-center gap-2 text-sm pl-3 border-l border-border">
-              <Activity className={`h-4 w-4 ${isCapturing ? 'text-destructive animate-pulse' : 'text-success'}`} />
-              <span className="text-muted-foreground">
-                {modelsLoading ? 'Loading AI...' : isModelLoaded ? 'AI Ready' : 'Demo Mode'}
-              </span>
+              {modelsLoading ? (
+                <>
+                  <Activity className="h-4 w-4 text-primary animate-spin" />
+                  <span className="text-muted-foreground">Loading AI...</span>
+                </>
+              ) : modelError ? (
+                <>
+                  <AlertCircle className="h-4 w-4 text-destructive" />
+                  <span className="text-destructive text-xs" title={modelError}>Model Error</span>
+                </>
+              ) : isModelLoaded ? (
+                <>
+                  <CheckCircle className="h-4 w-4 text-success" />
+                  <span className="text-success">AI Ready</span>
+                </>
+              ) : (
+                <>
+                  <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-muted-foreground">Demo Mode</span>
+                </>
+              )}
             </div>
           </div>
         </div>
         <p className="text-muted-foreground text-sm">
           Dynamic ad targeting powered by real-time demographic detection • Camera activates at {captureSettings.startPercent}% of ad duration
+          {testMode && <span className="ml-2 text-primary font-medium">• TEST MODE ACTIVE</span>}
         </p>
       </header>
 
@@ -304,7 +396,7 @@ const SmartAdsSystem = () => {
           <div className="flex items-center gap-4">
             <span className="flex items-center gap-1.5">
               <Zap className="h-3 w-3 text-primary" />
-              HuggingFace Transformers.js
+              face-api.js (TinyFaceDetector + AgeGender)
             </span>
             <span>•</span>
             <span>Camera: {captureSettings.startPercent}% - {captureSettings.endPercent}% of ad</span>
