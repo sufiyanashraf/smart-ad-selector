@@ -21,8 +21,23 @@ const SmartAdsSystem = () => {
     endPercent: 92,
   });
 
-  // Custom ads state
-  const [customAds, setCustomAds] = useState<AdMetadata[]>([...sampleAds]);
+  // Custom ads state - persisted to localStorage
+  const [customAds, setCustomAds] = useState<AdMetadata[]>(() => {
+    const saved = localStorage.getItem('smartads-custom-ads');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return [...sampleAds];
+      }
+    }
+    return [...sampleAds];
+  });
+
+  // Save ads to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('smartads-custom-ads', JSON.stringify(customAds));
+  }, [customAds]);
 
   // Recalculate ads when settings change
   const adsWithCaptureWindows = useMemo(() => {
