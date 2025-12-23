@@ -277,6 +277,7 @@ const SmartAdsSystem = () => {
               hasPermission={hasPermission}
               error={webcamError}
               isCapturing={isCapturing}
+              detections={currentViewers}
             />
             <SystemLogs logs={logs} />
           </div>
@@ -303,7 +304,7 @@ const SmartAdsSystem = () => {
           <div className="flex items-center gap-4">
             <span className="flex items-center gap-1.5">
               <Zap className="h-3 w-3 text-primary" />
-              face-api.js for detection
+              HuggingFace Transformers.js
             </span>
             <span>•</span>
             <span>Camera: {captureSettings.startPercent}% - {captureSettings.endPercent}% of ad</span>

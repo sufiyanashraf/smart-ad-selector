@@ -18,11 +18,19 @@ export interface DemographicCounts {
   adult: number;
 }
 
+export interface FaceBoundingBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface DetectionResult {
   gender: 'male' | 'female';
   age: number;
   ageGroup: 'young' | 'adult';
   confidence: number;
+  boundingBox?: FaceBoundingBox;
 }
 
 export interface AdScore {
