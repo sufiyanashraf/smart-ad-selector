@@ -1,8 +1,7 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { AdMetadata } from '@/types/ad';
 import { 
   FolderPlus, 
-  Upload, 
   Trash2, 
   Tag, 
   Video, 
@@ -12,7 +11,8 @@ import {
   Briefcase,
   Plus,
   X,
-  Check
+  Check,
+  Link
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -54,59 +54,8 @@ export const AdManager = ({
     gender: 'all',
     ageGroup: 'all',
     duration: 15,
+    videoUrl: '',
   });
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith('video/')) {
-      toast.error('Please upload a video file');
-      return;
-    }
-
-    // Create object URL for the video
-    const videoUrl = URL.createObjectURL(file);
-    
-    // Get video duration
-    const video = document.createElement('video');
-    video.preload = 'metadata';
-    video.onloadedmetadata = () => {
-      const duration = Math.round(video.duration);
-      const captureStart = Math.floor(duration * captureStartPercent / 100);
-      const captureEnd = Math.floor(duration * captureEndPercent / 100);
-
-      const ad: AdMetadata = {
-        id: `ad-${Date.now()}`,
-        filename: file.name,
-        title: file.name.replace(/\.[^/.]+$/, ''),
-        gender: (newAd.gender as 'male' | 'female' | 'all') || 'all',
-        ageGroup: (newAd.ageGroup as 'young' | 'adult' | 'all') || 'all',
-        duration,
-        captureStart,
-        captureEnd,
-        videoUrl,
-      };
-
-      onAdsChange([...ads, ad]);
-      toast.success(`Added "${ad.title}" (${duration}s)`);
-      
-      // Reset form
-      setNewAd({
-        title: '',
-        gender: 'all',
-        ageGroup: 'all',
-        duration: 15,
-      });
-    };
-    video.src = videoUrl;
-
-    // Reset file input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
 
   const handleRemoveAd = (id: string) => {
     const ad = ads.find(a => a.id === id);
@@ -175,32 +124,15 @@ export const AdManager = ({
         </DialogHeader>
 
         <div className="space-y-6 py-4">
-          {/* Upload Section */}
+          {/* Add Ad Section */}
           <div className="bg-muted/50 rounded-xl p-4 space-y-4 border border-dashed border-border">
             <h4 className="font-medium flex items-center gap-2">
-              <Plus className="h-4 w-4 text-primary" />
-              Add New Ad
+              <Link className="h-4 w-4 text-primary" />
+              Add Ad from URL
             </h4>
-
-            {/* File Upload */}
-            <div className="flex items-center gap-3">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="video/*"
-                onChange={handleFileUpload}
-                className="hidden"
-              />
-              <Button 
-                variant="outline" 
-                onClick={() => fileInputRef.current?.click()}
-                className="gap-2"
-              >
-                <Upload className="h-4 w-4" />
-                Upload Video
-              </Button>
-              <span className="text-sm text-muted-foreground">or</span>
-            </div>
+            <p className="text-sm text-muted-foreground">
+              Enter a video URL from external sources (e.g., direct MP4 links, CDN URLs).
+            </p>
 
             {/* URL Input */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
