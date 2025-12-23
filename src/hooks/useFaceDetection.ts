@@ -2,9 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import * as faceapi from 'face-api.js';
 import { DetectionResult, FaceBoundingBox } from '@/types/ad';
 
-const MODEL_BASE_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js-models@master';
-const TINY_FACE_DETECTOR_URL = `${MODEL_BASE_URL}/tiny_face_detector_model`;
-const AGE_GENDER_URL = `${MODEL_BASE_URL}/age_gender_model`;
+// Use local models from public folder - no CORS issues
+const MODEL_URL = '/models';
 
 export const useFaceDetection = () => {
   const [isModelLoaded, setIsModelLoaded] = useState(false);
@@ -19,19 +18,20 @@ export const useFaceDetection = () => {
       
       try {
         setIsLoading(true);
-        console.log('[FaceAPI] Loading models from:', { TINY_FACE_DETECTOR_URL, AGE_GENDER_URL });
+        console.log('[FaceAPI] Loading models from:', MODEL_URL);
         
         await Promise.all([
-          faceapi.nets.tinyFaceDetector.loadFromUri(TINY_FACE_DETECTOR_URL),
-          faceapi.nets.ageGenderNet.loadFromUri(AGE_GENDER_URL),
+          faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+          faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL),
         ]);
         
-        console.log('[FaceAPI] Models loaded successfully!');
+        console.log('[FaceAPI] ✅ Models loaded successfully!');
         setIsModelLoaded(true);
         setError(null);
       } catch (err) {
-        console.error('[FaceAPI] Failed to load models:', err);
-        setError('AI models failed to load (network/CORS).');
+        console.error('[FaceAPI] ❌ Failed to load models:', err);
+        const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+        setError(`Model load failed: ${errorMsg}`);
         setIsModelLoaded(false);
       } finally {
         setIsLoading(false);
@@ -62,9 +62,10 @@ export const useFaceDetection = () => {
     try {
       console.log('[Detection] Running face-api detection...');
       
+      // Lower threshold for better detection, larger input for accuracy
       const options = new faceapi.TinyFaceDetectorOptions({
-        inputSize: 320,
-        scoreThreshold: 0.5
+        inputSize: 416,
+        scoreThreshold: 0.3
       });
 
       const detections = await faceapi
