@@ -2,7 +2,9 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import * as faceapi from 'face-api.js';
 import { DetectionResult, FaceBoundingBox } from '@/types/ad';
 
-const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
+const MODEL_BASE_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js-models@master';
+const TINY_FACE_DETECTOR_URL = `${MODEL_BASE_URL}/tiny_face_detector_model`;
+const AGE_GENDER_URL = `${MODEL_BASE_URL}/age_gender_model`;
 
 export const useFaceDetection = () => {
   const [isModelLoaded, setIsModelLoaded] = useState(false);
@@ -17,11 +19,11 @@ export const useFaceDetection = () => {
       
       try {
         setIsLoading(true);
-        console.log('[FaceAPI] Loading models from:', MODEL_URL);
+        console.log('[FaceAPI] Loading models from:', { TINY_FACE_DETECTOR_URL, AGE_GENDER_URL });
         
         await Promise.all([
-          faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-          faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL),
+          faceapi.nets.tinyFaceDetector.loadFromUri(TINY_FACE_DETECTOR_URL),
+          faceapi.nets.ageGenderNet.loadFromUri(AGE_GENDER_URL),
         ]);
         
         console.log('[FaceAPI] Models loaded successfully!');
@@ -29,7 +31,7 @@ export const useFaceDetection = () => {
         setError(null);
       } catch (err) {
         console.error('[FaceAPI] Failed to load models:', err);
-        setError('AI models unavailable. Detection disabled.');
+        setError('AI models failed to load (network/CORS).');
         setIsModelLoaded(false);
       } finally {
         setIsLoading(false);
