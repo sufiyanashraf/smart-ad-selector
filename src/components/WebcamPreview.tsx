@@ -57,19 +57,30 @@ export const WebcamPreview = ({
       const scaledWidth = width * scaleX;
       const scaledHeight = height * scaleY;
 
+      const css = getComputedStyle(document.documentElement);
+      const getHsl = (varName: string, fallback: string) => {
+        const v = css.getPropertyValue(varName).trim();
+        return v ? `hsl(${v})` : fallback;
+      };
+      const getHslA = (varName: string, alpha: number, fallback: string) => {
+        const v = css.getPropertyValue(varName).trim();
+        return v ? `hsl(${v} / ${alpha})` : fallback;
+      };
+
       // Determine color based on confidence
       const isLowConfidence = detection.confidence < 0.75;
       const isMedConfidence = detection.confidence >= 0.75 && detection.confidence < 0.85;
-      
-      let boxColor = '#22c55e'; // Green for high confidence
-      let bgColor = 'rgba(34, 197, 94, 0.2)';
-      if (isLowConfidence) {
-        boxColor = '#ef4444'; // Red for low confidence
-        bgColor = 'rgba(239, 68, 68, 0.2)';
-      } else if (isMedConfidence) {
-        boxColor = '#f59e0b'; // Yellow for medium confidence
-        bgColor = 'rgba(245, 158, 11, 0.2)';
-      }
+
+      const highColor = getHsl('--success', 'hsl(142 71% 45%)');
+      const midColor = getHsl('--primary', 'hsl(220 90% 60%)');
+      const lowColor = getHsl('--destructive', 'hsl(0 84% 60%)');
+
+      const boxColor = isLowConfidence ? lowColor : isMedConfidence ? midColor : highColor;
+      const bgColor = isLowConfidence
+        ? getHslA('--destructive', 0.2, 'hsl(0 84% 60% / 0.2)')
+        : isMedConfidence
+          ? getHslA('--primary', 0.2, 'hsl(220 90% 60% / 0.2)')
+          : getHslA('--success', 0.2, 'hsl(142 71% 45% / 0.2)');
 
       // Draw bounding box
       ctx.strokeStyle = boxColor;
@@ -85,12 +96,12 @@ export const WebcamPreview = ({
       ctx.font = 'bold 12px sans-serif';
       const labelWidth = ctx.measureText(label).width + 10;
       const labelHeight = 20;
-      
+
       ctx.fillStyle = boxColor;
       ctx.fillRect(scaledX, scaledY - labelHeight, labelWidth, labelHeight);
 
       // Draw label text
-      ctx.fillStyle = '#ffffff';
+      ctx.fillStyle = getHsl('--primary-foreground', 'hsl(0 0% 100%)');
       ctx.textBaseline = 'middle';
       ctx.fillText(label, scaledX + 5, scaledY - labelHeight / 2);
 
@@ -98,11 +109,11 @@ export const WebcamPreview = ({
       const genderIcon = detection.gender === 'male' ? 'MALE' : 'FEMALE';
       const ageGroup = detection.ageGroup === 'young' ? 'YOUNG' : 'ADULT';
       const bottomLabel = `${genderIcon} • ${ageGroup}`;
-      
+
       const bottomLabelWidth = ctx.measureText(bottomLabel).width + 10;
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+      ctx.fillStyle = getHslA('--background', 0.7, 'hsl(0 0% 0% / 0.7)');
       ctx.fillRect(scaledX, scaledY + scaledHeight, bottomLabelWidth, labelHeight);
-      
+
       ctx.fillStyle = boxColor;
       ctx.fillText(bottomLabel, scaledX + 5, scaledY + scaledHeight + labelHeight / 2);
     });

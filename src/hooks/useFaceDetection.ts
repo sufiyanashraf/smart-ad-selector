@@ -1,158 +1,61 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { AutoModel, AutoProcessor, RawImage } from '@huggingface/transformers';
+import * as faceDetection from '@tensorflow-models/face-detection';
+import * as tf from '@tensorflow/tfjs-core';
+import '@tensorflow/tfjs-backend-webgl';
 import { DetectionResult, FaceBoundingBox } from '@/types/ad';
 
-const MODEL_ID = 'onnx-community/age-gender-prediction-ONNX';
+const AGE_GENDER_MODEL_ID = 'onnx-community/age-gender-prediction-ONNX';
 
-// Simple face detection using canvas analysis
-// We'll detect faces by looking for skin tones and face-like regions
-const detectFaceRegions = async (
-  videoElement: HTMLVideoElement
-): Promise<FaceBoundingBox[]> => {
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return [];
-
-  const width = videoElement.videoWidth || 640;
-  const height = videoElement.videoHeight || 480;
-  canvas.width = width;
-  canvas.height = height;
-
-  ctx.drawImage(videoElement, 0, 0, width, height);
-  const imageData = ctx.getImageData(0, 0, width, height);
-  const data = imageData.data;
-
-  // Simple skin tone detection
-  const skinPixels: { x: number; y: number }[] = [];
-  
-  for (let y = 0; y < height; y += 4) {
-    for (let x = 0; x < width; x += 4) {
-      const i = (y * width + x) * 4;
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-
-      // Skin tone detection heuristic
-      if (
-        r > 95 && g > 40 && b > 20 &&
-        r > g && r > b &&
-        Math.abs(r - g) > 15 &&
-        r - g > 15 && r - b > 15
-      ) {
-        skinPixels.push({ x, y });
-      }
-    }
-  }
-
-  if (skinPixels.length < 50) return [];
-
-  // Cluster skin pixels to find face regions
-  const clusters = clusterPixels(skinPixels, 80);
-  
-  return clusters
-    .filter(cluster => cluster.length > 20)
-    .map(cluster => {
-      const xs = cluster.map(p => p.x);
-      const ys = cluster.map(p => p.y);
-      const minX = Math.min(...xs);
-      const maxX = Math.max(...xs);
-      const minY = Math.min(...ys);
-      const maxY = Math.max(...ys);
-      
-      // Expand the bounding box a bit and ensure aspect ratio
-      const faceWidth = maxX - minX;
-      const faceHeight = maxY - minY;
-      const aspectRatio = faceHeight / faceWidth;
-      
-      // Faces are typically taller than wide
-      if (aspectRatio < 0.5 || aspectRatio > 2.5) return null;
-      
-      // Add padding
-      const padding = faceWidth * 0.3;
-      return {
-        x: Math.max(0, minX - padding),
-        y: Math.max(0, minY - padding),
-        width: Math.min(width - minX, faceWidth + padding * 2),
-        height: Math.min(height - minY, faceHeight + padding * 2),
-      };
-    })
-    .filter((box): box is FaceBoundingBox => box !== null)
-    .slice(0, 5); // Max 5 faces
-};
-
-// Simple clustering algorithm
-const clusterPixels = (
-  pixels: { x: number; y: number }[],
-  threshold: number
-): { x: number; y: number }[][] => {
-  const clusters: { x: number; y: number }[][] = [];
-  const visited = new Set<number>();
-
-  for (let i = 0; i < pixels.length; i++) {
-    if (visited.has(i)) continue;
-    
-    const cluster: { x: number; y: number }[] = [];
-    const queue = [i];
-    
-    while (queue.length > 0) {
-      const idx = queue.shift()!;
-      if (visited.has(idx)) continue;
-      visited.add(idx);
-      cluster.push(pixels[idx]);
-
-      for (let j = 0; j < pixels.length; j++) {
-        if (visited.has(j)) continue;
-        const dx = pixels[idx].x - pixels[j].x;
-        const dy = pixels[idx].y - pixels[j].y;
-        if (Math.sqrt(dx * dx + dy * dy) < threshold) {
-          queue.push(j);
-        }
-      }
-    }
-    
-    if (cluster.length > 0) {
-      clusters.push(cluster);
-    }
-  }
-
-  return clusters;
-};
+const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
 
 export const useFaceDetection = () => {
   const [isModelLoaded, setIsModelLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
   const loadingRef = useRef(false);
-  const modelRef = useRef<any>(null);
-  const processorRef = useRef<any>(null);
+  const ageGenderModelRef = useRef<any>(null);
+  const ageGenderProcessorRef = useRef<any>(null);
+  const faceDetectorRef = useRef<faceDetection.FaceDetector | null>(null);
 
   useEffect(() => {
     const loadModels = async () => {
       if (loadingRef.current) return;
       loadingRef.current = true;
-      
+
       try {
         setIsLoading(true);
-        console.log('[HF] Loading age-gender model from:', MODEL_ID);
-        
-        // Load the model and processor
-        const [model, processor] = await Promise.all([
-          AutoModel.from_pretrained(MODEL_ID, {
-            device: 'wasm', // Use WebAssembly for better compatibility
-          }),
-          AutoProcessor.from_pretrained(MODEL_ID),
-        ]);
-        
-        modelRef.current = model;
-        processorRef.current = processor;
-        
-        console.log('[HF] Models loaded successfully!');
-        setIsModelLoaded(true);
         setError(null);
-      } catch (err) {
-        console.error('[HF] Failed to load models:', err);
-        setError('AI models unavailable. Detection disabled.');
+
+        // TFJS backend
+        await tf.setBackend('webgl');
+        await tf.ready();
+
+        // Face detector (MediaPipe)
+        const detector = await faceDetection.createDetector(
+          faceDetection.SupportedModels.MediaPipeFaceDetector,
+          {
+            runtime: 'tfjs',
+            maxFaces: 3,
+            modelType: 'short',
+          }
+        );
+        faceDetectorRef.current = detector;
+
+        // Age/Gender model (Transformers.js)
+        const [model, processor] = await Promise.all([
+          AutoModel.from_pretrained(AGE_GENDER_MODEL_ID, { device: 'wasm' }),
+          AutoProcessor.from_pretrained(AGE_GENDER_MODEL_ID),
+        ]);
+        ageGenderModelRef.current = model;
+        ageGenderProcessorRef.current = processor;
+
+        setIsModelLoaded(true);
+      } catch (e) {
+        console.error('[Detection] Model load error:', e);
         setIsModelLoaded(false);
+        setError('AI models unavailable.');
       } finally {
         setIsLoading(false);
       }
@@ -161,103 +64,84 @@ export const useFaceDetection = () => {
     loadModels();
   }, []);
 
-  const detectFaces = useCallback(async (
-    videoElement: HTMLVideoElement
-  ): Promise<DetectionResult[]> => {
-    if (!videoElement) {
-      console.log('[Detection] No video element');
-      return [];
-    }
+  const detectFaces = useCallback(async (videoElement: HTMLVideoElement): Promise<DetectionResult[]> => {
+    if (!videoElement) return [];
+    if (videoElement.readyState < 2) return [];
 
-    if (videoElement.readyState < 2) {
-      console.log('[Detection] Video not ready, readyState:', videoElement.readyState);
-      return [];
-    }
+    const detector = faceDetectorRef.current;
+    if (!detector) return [];
 
-    // First, detect face regions
-    const faceRegions = await detectFaceRegions(videoElement);
-    console.log('[Detection] Found', faceRegions.length, 'potential face regions');
+    // 1) Face boxes
+    const faces = await detector.estimateFaces(videoElement, { flipHorizontal: false });
+    if (!faces?.length) return [];
 
-    if (faceRegions.length === 0) {
-      console.log('[Detection] No faces found in frame');
-      return [];
-    }
+    const vw = videoElement.videoWidth || 640;
+    const vh = videoElement.videoHeight || 480;
 
-    if (!isModelLoaded || !modelRef.current || !processorRef.current) {
-      console.log('[Detection] Model not loaded, returning face regions only');
-      // Return regions without age/gender (will be detected when model loads)
-      return faceRegions.map(box => ({
-        gender: 'male' as const,
-        age: 25,
-        ageGroup: 'young' as const,
-        confidence: 0.5,
-        boundingBox: box,
-      }));
-    }
+    // 2) For each face, crop + age/gender
+    const model = ageGenderModelRef.current;
+    const processor = ageGenderProcessorRef.current;
 
-    try {
-      const results: DetectionResult[] = [];
-      const model = modelRef.current;
-      const processor = processorRef.current;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return [];
 
-      // Create a canvas to crop each face
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return [];
+    const results: DetectionResult[] = [];
 
-      for (const box of faceRegions) {
-        try {
-          // Crop the face region
-          canvas.width = 224;
-          canvas.height = 224;
-          
-          ctx.drawImage(
-            videoElement,
-            box.x, box.y, box.width, box.height,
-            0, 0, 224, 224
-          );
+    for (const face of faces) {
+      // FaceDetection returns box in pixels for the input source
+      const box = face.box;
+      const x = clamp(box.xMin ?? 0, 0, vw);
+      const y = clamp(box.yMin ?? 0, 0, vh);
+      const w = clamp(box.width ?? 0, 0, vw - x);
+      const h = clamp(box.height ?? 0, 0, vh - y);
+      if (w < 10 || h < 10) continue;
 
-          // Convert canvas to RawImage
-          const imageData = ctx.getImageData(0, 0, 224, 224);
-          const image = new RawImage(imageData.data, 224, 224, 4);
+      const boundingBox: FaceBoundingBox = { x, y, width: w, height: h };
 
-          // Process and run model
-          const inputs = await processor(image);
-          const { logits } = await model(inputs);
-          
-          // Extract predictions
-          const output = logits.tolist()[0];
-          const [ageLogits, genderLogits] = output;
-          
-          const age = Math.min(Math.max(Math.round(ageLogits), 1), 100);
-          const isFemale = genderLogits >= 0.5;
-          const confidence = Math.max(genderLogits, 1 - genderLogits);
-
-          results.push({
-            gender: isFemale ? 'female' : 'male',
-            age,
-            ageGroup: age < 35 ? 'young' : 'adult',
-            confidence,
-            boundingBox: box,
-          });
-
-          console.log(`[Detection] Face: ${isFemale ? 'Female' : 'Male'}, Age: ${age}, Confidence: ${(confidence * 100).toFixed(1)}%`);
-        } catch (faceErr) {
-          console.error('[Detection] Error processing face:', faceErr);
-        }
+      // If age/gender model isn't ready, still return the box (so UI can show it)
+      if (!model || !processor) {
+        results.push({
+          gender: 'male',
+          age: 0,
+          ageGroup: 'young',
+          confidence: 0,
+          boundingBox,
+        });
+        continue;
       }
 
-      return results;
-    } catch (err) {
-      console.error('[Detection] Error:', err);
-      return [];
+      // Crop to 224x224
+      canvas.width = 224;
+      canvas.height = 224;
+      ctx.drawImage(videoElement, x, y, w, h, 0, 0, 224, 224);
+      const imageData = ctx.getImageData(0, 0, 224, 224);
+
+      // RawImage expects RGBA
+      const image = new RawImage(imageData.data, 224, 224, 4);
+      const inputs = await processor(image);
+      const { logits } = await model(inputs);
+
+      const [ageLogits, genderLogits] = logits.tolist()[0] as [number, number];
+      const age = clamp(Math.round(ageLogits), 1, 100);
+      const isFemale = genderLogits >= 0.5;
+      const confidence = Math.max(genderLogits, 1 - genderLogits);
+
+      results.push({
+        gender: isFemale ? 'female' : 'male',
+        age,
+        ageGroup: age < 35 ? 'young' : 'adult',
+        confidence,
+        boundingBox,
+      });
     }
-  }, [isModelLoaded]);
+
+    return results;
+  }, []);
 
   return { isModelLoaded, isLoading, error, detectFaces };
 };
 
-// Reset function (kept for compatibility)
 export const resetSimulatedPerson = () => {
-  // No-op - we no longer simulate
+  // no-op (kept for backwards compatibility)
 };
