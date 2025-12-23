@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import * as faceapi from 'face-api.js';
+import * as tf from '@tensorflow/tfjs';
 import { DetectionResult, FaceBoundingBox } from '@/types/ad';
 
 // Use local models from public folder - no CORS issues
@@ -18,6 +19,12 @@ export const useFaceDetection = () => {
       
       try {
         setIsLoading(true);
+        
+        // Initialize TensorFlow.js backend first - this fixes the "backend undefined" error
+        console.log('[TensorFlow] Initializing backend...');
+        await tf.ready();
+        console.log('[TensorFlow] Backend ready:', tf.getBackend());
+        
         console.log('[FaceAPI] Loading models from:', MODEL_URL);
         
         await Promise.all([
