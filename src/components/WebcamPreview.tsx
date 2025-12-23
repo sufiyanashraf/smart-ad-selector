@@ -1,6 +1,7 @@
-import { RefObject } from 'react';
+import { RefObject, useRef, useEffect } from 'react';
 import { Camera, CameraOff, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { DetectionResult } from '@/types/ad';
 
 interface WebcamPreviewProps {
   videoRef: RefObject<HTMLVideoElement>;
@@ -8,6 +9,7 @@ interface WebcamPreviewProps {
   hasPermission: boolean | null;
   error: string | null;
   isCapturing: boolean;
+  detections?: DetectionResult[];
 }
 
 export const WebcamPreview = ({
@@ -16,7 +18,96 @@ export const WebcamPreview = ({
   hasPermission,
   error,
   isCapturing,
+  detections = [],
 }: WebcamPreviewProps) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Draw bounding boxes on canvas
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const video = videoRef.current;
+    if (!canvas || !video) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Match canvas to video dimensions
+    const rect = video.getBoundingClientRect();
+    canvas.width = rect.width;
+    canvas.height = rect.height;
+
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (!isActive || detections.length === 0) return;
+
+    // Get scale factors
+    const videoWidth = video.videoWidth || 640;
+    const videoHeight = video.videoHeight || 480;
+    const scaleX = rect.width / videoWidth;
+    const scaleY = rect.height / videoHeight;
+
+    // Draw bounding boxes for each detection
+    detections.forEach((detection) => {
+      if (!detection.boundingBox) return;
+
+      const { x, y, width, height } = detection.boundingBox;
+      const scaledX = x * scaleX;
+      const scaledY = y * scaleY;
+      const scaledWidth = width * scaleX;
+      const scaledHeight = height * scaleY;
+
+      // Determine color based on confidence
+      const isLowConfidence = detection.confidence < 0.75;
+      const isMedConfidence = detection.confidence >= 0.75 && detection.confidence < 0.85;
+      
+      let boxColor = '#22c55e'; // Green for high confidence
+      let bgColor = 'rgba(34, 197, 94, 0.2)';
+      if (isLowConfidence) {
+        boxColor = '#ef4444'; // Red for low confidence
+        bgColor = 'rgba(239, 68, 68, 0.2)';
+      } else if (isMedConfidence) {
+        boxColor = '#f59e0b'; // Yellow for medium confidence
+        bgColor = 'rgba(245, 158, 11, 0.2)';
+      }
+
+      // Draw bounding box
+      ctx.strokeStyle = boxColor;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(scaledX, scaledY, scaledWidth, scaledHeight);
+
+      // Draw semi-transparent fill
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(scaledX, scaledY, scaledWidth, scaledHeight);
+
+      // Draw label background
+      const label = `${detection.gender === 'male' ? '♂' : '♀'} ${detection.age}y ${(detection.confidence * 100).toFixed(0)}%`;
+      ctx.font = 'bold 12px sans-serif';
+      const labelWidth = ctx.measureText(label).width + 10;
+      const labelHeight = 20;
+      
+      ctx.fillStyle = boxColor;
+      ctx.fillRect(scaledX, scaledY - labelHeight, labelWidth, labelHeight);
+
+      // Draw label text
+      ctx.fillStyle = '#ffffff';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, scaledX + 5, scaledY - labelHeight / 2);
+
+      // Draw gender icon at bottom
+      const genderIcon = detection.gender === 'male' ? 'MALE' : 'FEMALE';
+      const ageGroup = detection.ageGroup === 'young' ? 'YOUNG' : 'ADULT';
+      const bottomLabel = `${genderIcon} • ${ageGroup}`;
+      
+      const bottomLabelWidth = ctx.measureText(bottomLabel).width + 10;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+      ctx.fillRect(scaledX, scaledY + scaledHeight, bottomLabelWidth, labelHeight);
+      
+      ctx.fillStyle = boxColor;
+      ctx.fillText(bottomLabel, scaledX + 5, scaledY + scaledHeight + labelHeight / 2);
+    });
+  }, [detections, isActive, videoRef]);
+
   return (
     <div className="glass-card p-4 space-y-3">
       <div className="flex items-center justify-between">
@@ -27,6 +118,11 @@ export const WebcamPreview = ({
             <CameraOff className="h-4 w-4 text-muted-foreground" />
           )}
           Webcam Feed
+          {detections.length > 0 && (
+            <span className="ml-2 px-2 py-0.5 bg-primary/20 text-primary text-xs rounded-full">
+              {detections.length} face{detections.length !== 1 ? 's' : ''}
+            </span>
+          )}
         </h3>
         
         <div className={cn(
@@ -58,6 +154,12 @@ export const WebcamPreview = ({
           )}
           playsInline
           muted
+        />
+        
+        {/* Canvas overlay for bounding boxes */}
+        <canvas
+          ref={canvasRef}
+          className="absolute inset-0 w-full h-full pointer-events-none"
         />
         
         {!isActive && (
@@ -99,7 +201,10 @@ export const WebcamPreview = ({
       </div>
 
       <p className="text-xs text-muted-foreground text-center">
-        Camera activates only during capture window
+        {isActive && detections.length > 0 
+          ? `Detecting ${detections.length} person(s) with bounding boxes`
+          : 'Camera activates only during capture window'
+        }
       </p>
     </div>
   );
