@@ -15,10 +15,10 @@ import { Tv, Zap, Activity, Play, Square, AlertCircle, CheckCircle } from 'lucid
 import { Button } from '@/components/ui/button';
 
 const SmartAdsSystem = () => {
-  // Settings state
+  // Settings state - default to 40% capture window (60%-100%)
   const [captureSettings, setCaptureSettings] = useState<CaptureSettings>({
-    startPercent: 75,
-    endPercent: 92,
+    startPercent: 60,
+    endPercent: 100,
   });
 
   // Custom ads state - persisted to localStorage
@@ -55,6 +55,7 @@ const SmartAdsSystem = () => {
   const [demographics, setDemographics] = useState<DemographicCounts>({
     male: 0,
     female: 0,
+    kid: 0,
     young: 0,
     adult: 0,
   });
@@ -64,7 +65,7 @@ const SmartAdsSystem = () => {
   const captureIntervalRef = useRef<number | null>(null);
   const isCapturingRef = useRef(false);
   const initializedRef = useRef(false);
-  const lastDemographicsRef = useRef<DemographicCounts>({ male: 0, female: 0, young: 0, adult: 0 });
+  const lastDemographicsRef = useRef<DemographicCounts>({ male: 0, female: 0, kid: 0, young: 0, adult: 0 });
   const testModeTimeoutRef = useRef<number | null>(null);
 
   const { videoRef, isActive: webcamActive, hasPermission, error: webcamError, startWebcam, stopWebcam } = useWebcam();
@@ -126,13 +127,14 @@ const SmartAdsSystem = () => {
         const newDemographics: DemographicCounts = {
           male: results.filter(d => d.gender === 'male').length,
           female: results.filter(d => d.gender === 'female').length,
+          kid: results.filter(d => d.ageGroup === 'kid').length,
           young: results.filter(d => d.ageGroup === 'young').length,
           adult: results.filter(d => d.ageGroup === 'adult').length,
         };
         setDemographics(newDemographics);
         lastDemographicsRef.current = newDemographics;
         
-        addLog('detection', `👁️ ${results.length} viewer(s): ${results.map(r => `${r.gender}/${r.age}y (${(r.confidence * 100).toFixed(0)}%)`).join(', ')}`);
+        addLog('detection', `👁️ ${results.length} viewer(s): ${results.map(r => `${r.gender}/${r.ageGroup} (${(r.confidence * 100).toFixed(0)}%)`).join(', ')}`);
       }
     }, 1500);
   }, [detectFaces, addLog, videoRef]);
@@ -152,7 +154,7 @@ const SmartAdsSystem = () => {
     addLog('info', '🧪 TEST MODE: Starting immediate detection (30s)...');
     
     // Reset demographics
-    setDemographics({ male: 0, female: 0, young: 0, adult: 0 });
+    setDemographics({ male: 0, female: 0, kid: 0, young: 0, adult: 0 });
     setCurrentViewers([]);
     
     const success = await startWebcam();
@@ -203,7 +205,7 @@ const SmartAdsSystem = () => {
       setIsCapturing(true);
       
       // Reset for new capture session
-      setDemographics({ male: 0, female: 0, young: 0, adult: 0 });
+      setDemographics({ male: 0, female: 0, kid: 0, young: 0, adult: 0 });
       setCurrentViewers([]);
       resetSimulatedPerson(); // Reset simulated person for fresh detection
       
@@ -235,7 +237,7 @@ const SmartAdsSystem = () => {
       // Log and reorder based on detected demographics
       const demo = lastDemographicsRef.current;
       if (demo.male + demo.female > 0) {
-        addLog('info', `📊 Detected: ${demo.male}M/${demo.female}F, ${demo.young} young/${demo.adult} adult`);
+        addLog('info', `📊 Detected: ${demo.male}M/${demo.female}F, ${demo.kid} kid/${demo.young} young/${demo.adult} adult`);
         reorderQueue(demo);
       }
     }

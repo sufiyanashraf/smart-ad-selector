@@ -92,7 +92,7 @@ export const WebcamPreview = ({
       ctx.fillRect(scaledX, scaledY, scaledWidth, scaledHeight);
 
       // Draw label background
-      const label = `${detection.gender === 'male' ? '♂' : '♀'} ${detection.age}y ${(detection.confidence * 100).toFixed(0)}%`;
+      const label = `${detection.gender === 'male' ? '♂' : '♀'} ${detection.ageGroup} ${(detection.confidence * 100).toFixed(0)}%`;
       ctx.font = 'bold 12px sans-serif';
       const labelWidth = ctx.measureText(label).width + 10;
       const labelHeight = 20;
@@ -107,7 +107,7 @@ export const WebcamPreview = ({
 
       // Draw gender icon at bottom
       const genderIcon = detection.gender === 'male' ? 'MALE' : 'FEMALE';
-      const ageGroup = detection.ageGroup === 'young' ? 'YOUNG' : 'ADULT';
+      const ageGroup = detection.ageGroup.toUpperCase();
       const bottomLabel = `${genderIcon} • ${ageGroup}`;
 
       const bottomLabelWidth = ctx.measureText(bottomLabel).width + 10;

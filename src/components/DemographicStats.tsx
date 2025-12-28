@@ -1,5 +1,5 @@
 import { DemographicCounts, DetectionResult } from '@/types/ad';
-import { Users, User, UserCircle2, Baby, Briefcase, AlertTriangle } from 'lucide-react';
+import { Users, User, UserCircle2, Baby, Briefcase, AlertTriangle, Smile } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface DemographicStatsProps {
@@ -14,10 +14,12 @@ export const DemographicStats = ({
   isCapturing,
 }: DemographicStatsProps) => {
   const totalGender = demographics.male + demographics.female;
-  const totalAge = demographics.young + demographics.adult;
+  const totalAge = demographics.kid + demographics.young + demographics.adult;
 
   const malePercent = totalGender > 0 ? (demographics.male / totalGender) * 100 : 50;
-  const youngPercent = totalAge > 0 ? (demographics.young / totalAge) * 100 : 50;
+  const kidPercent = totalAge > 0 ? (demographics.kid / totalAge) * 100 : 33;
+  const youngPercent = totalAge > 0 ? (demographics.young / totalAge) * 100 : 33;
+  const adultPercent = totalAge > 0 ? (demographics.adult / totalAge) * 100 : 34;
 
   // Get average confidence
   const avgConfidence = recentDetections.length > 0 
@@ -89,34 +91,51 @@ export const DemographicStats = ({
           </span>
         </div>
         
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-3">
+          <StatCard
+            icon={<Smile className="h-5 w-5" />}
+            label="Kid"
+            sublabel="< 13 years"
+            value={demographics.kid}
+            color="info"
+            isActive={demographics.kid >= demographics.young && demographics.kid >= demographics.adult && totalAge > 0}
+          />
           <StatCard
             icon={<Baby className="h-5 w-5" />}
             label="Young"
-            sublabel="< 35 years"
+            sublabel="13-34 years"
             value={demographics.young}
             color="success"
-            isActive={demographics.young >= demographics.adult && totalAge > 0}
+            isActive={demographics.young > demographics.kid && demographics.young >= demographics.adult && totalAge > 0}
           />
           <StatCard
             icon={<Briefcase className="h-5 w-5" />}
             label="Adult"
-            sublabel="≥ 35 years"
+            sublabel="35+ years"
             value={demographics.adult}
             color="warning"
-            isActive={demographics.adult > demographics.young}
+            isActive={demographics.adult > demographics.kid && demographics.adult > demographics.young}
           />
         </div>
 
-        <div className="h-2 bg-muted rounded-full overflow-hidden">
+        <div className="h-2 bg-muted rounded-full overflow-hidden flex">
           <div 
-            className="h-full bg-gradient-to-r from-success to-warning transition-all duration-500"
+            className="h-full bg-info transition-all duration-500"
+            style={{ width: `${kidPercent}%` }}
+          />
+          <div 
+            className="h-full bg-success transition-all duration-500"
             style={{ width: `${youngPercent}%` }}
+          />
+          <div 
+            className="h-full bg-warning transition-all duration-500"
+            style={{ width: `${adultPercent}%` }}
           />
         </div>
         <div className="flex justify-between text-xs text-muted-foreground">
+          <span>{kidPercent.toFixed(0)}% Kid</span>
           <span>{youngPercent.toFixed(0)}% Young</span>
-          <span>{(100 - youngPercent).toFixed(0)}% Adult</span>
+          <span>{adultPercent.toFixed(0)}% Adult</span>
         </div>
       </div>
 
@@ -143,7 +162,7 @@ interface StatCardProps {
   label: string;
   sublabel?: string;
   value: number;
-  color: 'primary' | 'accent' | 'success' | 'warning';
+  color: 'primary' | 'accent' | 'success' | 'warning' | 'info';
   isActive: boolean;
 }
 
@@ -153,26 +172,27 @@ const StatCard = ({ icon, label, sublabel, value, color, isActive }: StatCardPro
     accent: 'text-accent bg-accent/10 border-accent/30',
     success: 'text-success bg-success/10 border-success/30',
     warning: 'text-warning bg-warning/10 border-warning/30',
+    info: 'text-info bg-info/10 border-info/30',
   };
 
   return (
     <div className={cn(
-      "p-4 rounded-xl border-2 transition-all duration-300",
+      "p-3 rounded-xl border-2 transition-all duration-300",
       isActive 
         ? colorClasses[color]
         : "bg-muted/50 border-border text-muted-foreground"
     )}>
-      <div className="flex items-center gap-2 mb-2">
+      <div className="flex items-center gap-2 mb-1">
         {icon}
         <div>
-          <span className="font-medium">{label}</span>
+          <span className="font-medium text-sm">{label}</span>
           {sublabel && (
             <span className="block text-[10px] opacity-70">{sublabel}</span>
           )}
         </div>
       </div>
       <div className={cn(
-        "text-3xl font-display font-bold",
+        "text-2xl font-display font-bold",
         isActive && "animate-count"
       )}>
         {value}
@@ -190,6 +210,14 @@ const DetectionBadge = ({ detection, index }: DetectionBadgeProps) => {
   const isLowConfidence = detection.confidence < 0.75;
   const isMediumConfidence = detection.confidence >= 0.75 && detection.confidence < 0.85;
   
+  const getAgeGroupColor = () => {
+    switch (detection.ageGroup) {
+      case 'kid': return 'text-info';
+      case 'young': return 'text-success';
+      case 'adult': return 'text-warning';
+    }
+  };
+
   return (
     <div
       className={cn(
@@ -216,10 +244,8 @@ const DetectionBadge = ({ detection, index }: DetectionBadgeProps) => {
         {detection.gender}
       </span>
       <span className="text-muted-foreground">•</span>
-      <span className={cn(
-        detection.ageGroup === 'young' ? 'text-success' : 'text-warning'
-      )}>
-        {detection.age}y
+      <span className={cn("capitalize", getAgeGroupColor())}>
+        {detection.ageGroup}
       </span>
       <span className={cn(
         "ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold",

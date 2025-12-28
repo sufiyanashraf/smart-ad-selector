@@ -3,7 +3,7 @@ export interface AdMetadata {
   filename: string;
   title: string;
   gender: 'male' | 'female' | 'all';
-  ageGroup: 'young' | 'adult' | 'all';
+  ageGroup: 'kid' | 'young' | 'adult' | 'all';
   duration: number;
   captureStart: number;
   captureEnd: number;
@@ -14,6 +14,7 @@ export interface AdMetadata {
 export interface DemographicCounts {
   male: number;
   female: number;
+  kid: number;
   young: number;
   adult: number;
 }
@@ -27,8 +28,7 @@ export interface FaceBoundingBox {
 
 export interface DetectionResult {
   gender: 'male' | 'female';
-  age: number;
-  ageGroup: 'young' | 'adult';
+  ageGroup: 'kid' | 'young' | 'adult';
   confidence: number;
   boundingBox?: FaceBoundingBox;
 }

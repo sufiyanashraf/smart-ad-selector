@@ -97,10 +97,20 @@ export const useFaceDetection = () => {
           height: Math.min(box.height, videoHeight - box.y),
         };
 
+        // Classify age: kid (<13), young (13-34), adult (35+)
+        const age = Math.round(detection.age);
+        let ageGroup: 'kid' | 'young' | 'adult';
+        if (age < 13) {
+          ageGroup = 'kid';
+        } else if (age < 35) {
+          ageGroup = 'young';
+        } else {
+          ageGroup = 'adult';
+        }
+
         return {
           gender: detection.gender as 'male' | 'female',
-          age: Math.round(detection.age),
-          ageGroup: detection.age < 35 ? 'young' : 'adult',
+          ageGroup,
           confidence: detection.genderProbability,
           boundingBox,
         };
