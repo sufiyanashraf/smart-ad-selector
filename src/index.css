@@ -36,6 +36,9 @@
     --warning: 38 92% 50%;
     --warning-foreground: 222 47% 6%;
 
+    --info: 210 100% 56%;
+    --info-foreground: 210 40% 98%;
+
     --border: 222 30% 18%;
     --input: 222 30% 18%;
     --ring: 199 89% 48%;

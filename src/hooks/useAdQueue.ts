@@ -51,7 +51,14 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
     const reasons: string[] = [];
 
     const dominantGender = demographics.male >= demographics.female ? 'male' : 'female';
-    const dominantAge = demographics.young >= demographics.adult ? 'young' : 'adult';
+    
+    // Find dominant age group
+    let dominantAge: 'kid' | 'young' | 'adult' = 'young';
+    if (demographics.kid >= demographics.young && demographics.kid >= demographics.adult) {
+      dominantAge = 'kid';
+    } else if (demographics.adult > demographics.young && demographics.adult > demographics.kid) {
+      dominantAge = 'adult';
+    }
 
     // Perfect match bonus - both gender AND age match
     const genderMatches = ad.gender === dominantGender || ad.gender === 'all';
@@ -102,11 +109,19 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
     // Take only top 2 ads for the queue
     const top2 = scoredAds.slice(0, 2).map(s => s.ad);
     
+    // Find dominant age for logging
+    let dominantAge = 'young';
+    if (demographics.kid >= demographics.young && demographics.kid >= demographics.adult) {
+      dominantAge = 'kid';
+    } else if (demographics.adult > demographics.young && demographics.adult > demographics.kid) {
+      dominantAge = 'adult';
+    }
+    
     // Log the reordering
     const topAd = scoredAds[0];
     if (topAd) {
       console.log('[Queue] New queue (max 2):', scoredAds.slice(0, 2).map(s => `${s.ad.title}(${s.score})`).join(' > '));
-      addLog('queue', `🔄 Queue updated for ${demographics.male > demographics.female ? 'male' : 'female'} ${demographics.young > demographics.adult ? 'young' : 'adult'}`);
+      addLog('queue', `🔄 Queue updated for ${demographics.male > demographics.female ? 'male' : 'female'} ${dominantAge}`);
       addLog('queue', `Next: "${topAd.ad.title}" (score: ${topAd.score})`);
     }
 
@@ -148,6 +163,7 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
     total: queue.length,
     maleTargeted: queue.filter(a => a.gender === 'male').length,
     femaleTargeted: queue.filter(a => a.gender === 'female').length,
+    kidTargeted: queue.filter(a => a.ageGroup === 'kid').length,
     youngTargeted: queue.filter(a => a.ageGroup === 'young').length,
     adultTargeted: queue.filter(a => a.ageGroup === 'adult').length,
   }), [queue]);
