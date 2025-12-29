@@ -309,6 +309,27 @@ const SmartAdsSystem = () => {
     setCurrentTime(time);
   }, []);
 
+  const handleDurationDetected = useCallback((durationSeconds: number) => {
+    setCurrentAd(prev => {
+      if (!prev) return prev;
+      if (Math.round(prev.duration) === durationSeconds) return prev;
+
+      const updated = {
+        ...prev,
+        duration: durationSeconds,
+        captureStart: Math.floor(durationSeconds * captureSettings.startPercent / 100),
+        captureEnd: Math.floor(durationSeconds * captureSettings.endPercent / 100),
+      };
+
+      // Keep libraries in sync so playlist/queue shows correct time
+      setCustomAds(ads => ads.map(a => a.id === updated.id ? { ...a, ...updated } : a));
+      setManualQueue(q => q.map(a => a.id === updated.id ? { ...a, ...updated } : a));
+
+      addLog('info', `⏱️ Duration updated from video metadata: ${updated.title} = ${durationSeconds}s`);
+      return updated;
+    });
+  }, [captureSettings, addLog]);
+
   const handleAdEnded = useCallback(() => {
     isCapturingRef.current = false;
     setIsCapturing(false);
@@ -444,6 +465,7 @@ const SmartAdsSystem = () => {
             ad={currentAd}
             isPlaying={isPlaying}
             onTimeUpdate={handleTimeUpdate}
+            onDurationDetected={handleDurationDetected}
             onEnded={handleAdEnded}
             onPlay={() => setIsPlaying(true)}
             onPause={() => setIsPlaying(false)}

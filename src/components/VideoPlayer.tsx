@@ -14,6 +14,7 @@ interface VideoPlayerProps {
   onSkip: () => void;
   isCapturing: boolean;
   captureWindow: { start: number; end: number } | null;
+  onDurationDetected?: (durationSeconds: number) => void;
 }
 
 export const VideoPlayer = ({
@@ -26,6 +27,7 @@ export const VideoPlayer = ({
   onSkip,
   isCapturing,
   captureWindow,
+  onDurationDetected,
 }: VideoPlayerProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
@@ -61,8 +63,10 @@ export const VideoPlayer = ({
 
   const handleLoadedMetadata = () => {
     if (videoRef.current) {
+      const detected = Math.round(videoRef.current.duration || 0);
       setDuration(videoRef.current.duration);
       setIsLoaded(true);
+      if (detected > 0) onDurationDetected?.(detected);
     }
   };
 
