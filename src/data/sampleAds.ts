@@ -9,9 +9,9 @@ export const sampleAds: AdMetadata[] = [
     title: 'TechPro Gadgets',
     gender: 'male',
     ageGroup: 'young',
-    duration: 15,
-    captureStart: 11, // 75% of 15s
-    captureEnd: 14,   // 93% of 15s
+    duration: 15, // ForBiggerBlazes is ~15s
+    captureStart: 9,
+    captureEnd: 14,
     videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
   },
   {
@@ -20,8 +20,8 @@ export const sampleAds: AdMetadata[] = [
     title: 'Elegance Fashion',
     gender: 'female',
     ageGroup: 'adult',
-    duration: 15,
-    captureStart: 11,
+    duration: 15, // ForBiggerEscapes is ~15s
+    captureStart: 9,
     captureEnd: 14,
     videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
   },
@@ -31,9 +31,9 @@ export const sampleAds: AdMetadata[] = [
     title: 'PowerBoost Energy',
     gender: 'male',
     ageGroup: 'young',
-    duration: 15,
-    captureStart: 11,
-    captureEnd: 14,
+    duration: 60, // ForBiggerFun is ~60s
+    captureStart: 36,
+    captureEnd: 56,
     videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',
   },
   {
@@ -42,8 +42,8 @@ export const sampleAds: AdMetadata[] = [
     title: 'GlowUp Skincare',
     gender: 'female',
     ageGroup: 'young',
-    duration: 15,
-    captureStart: 11,
+    duration: 15, // ForBiggerJoyrides is ~15s
+    captureStart: 9,
     captureEnd: 14,
     videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
   },
@@ -53,9 +53,9 @@ export const sampleAds: AdMetadata[] = [
     title: 'WealthGuard Insurance',
     gender: 'all',
     ageGroup: 'adult',
-    duration: 15,
-    captureStart: 11,
-    captureEnd: 14,
+    duration: 53, // ForBiggerMeltdowns is ~53s
+    captureStart: 32,
+    captureEnd: 49,
     videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4',
   },
   {
@@ -64,10 +64,10 @@ export const sampleAds: AdMetadata[] = [
     title: 'NexGen Gaming',
     gender: 'all',
     ageGroup: 'young',
-    duration: 15,
-    captureStart: 11,
-    captureEnd: 14,
-    videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+    duration: 60, // Using shorter clip, not full Big Buck Bunny
+    captureStart: 36,
+    captureEnd: 56,
+    videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
   },
 ];
 
