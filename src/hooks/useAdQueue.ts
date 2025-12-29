@@ -6,14 +6,20 @@ interface UseAdQueueProps {
   customAds?: AdMetadata[];
   captureStartPercent?: number;
   captureEndPercent?: number;
+  manualMode?: boolean;
+  manualQueue?: AdMetadata[];
 }
 
 export const useAdQueue = (props?: UseAdQueueProps) => {
   const { 
     customAds, 
     captureStartPercent = 75, 
-    captureEndPercent = 92 
+    captureEndPercent = 92,
+    manualMode = false,
+    manualQueue: externalManualQueue = [],
   } = props || {};
+  
+  const manualQueueIndexRef = useRef(0);
 
   const initialAds = useMemo(() => {
     const ads = customAds && customAds.length > 0 ? customAds : sampleAds;
@@ -129,6 +135,23 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
   }, [scoreAd, addLog, customAds, captureStartPercent, captureEndPercent]);
 
   const getNextAd = useCallback((): AdMetadata | null => {
+    // Manual mode: cycle through manual queue in order
+    if (manualMode && externalManualQueue.length > 0) {
+      const nextIndex = manualQueueIndexRef.current % externalManualQueue.length;
+      const nextAd = {
+        ...externalManualQueue[nextIndex],
+        captureStart: Math.floor(externalManualQueue[nextIndex].duration * captureStartPercent / 100),
+        captureEnd: Math.floor(externalManualQueue[nextIndex].duration * captureEndPercent / 100),
+      };
+      manualQueueIndexRef.current = (nextIndex + 1) % externalManualQueue.length;
+      
+      addLog('ad', `▶️ Playing: "${nextAd.title}" (${nextIndex + 1}/${externalManualQueue.length})`);
+      lastPlayedIdRef.current = nextAd.id;
+      
+      return nextAd;
+    }
+
+    // Auto mode: original logic
     if (queue.length === 0) {
       const resetAds = initialAds;
       setQueue(resetAds);
@@ -157,7 +180,12 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
     addLog('ad', `▶️ Playing: "${nextAd.title}"`);
     
     return nextAd;
-  }, [queue, initialAds, addLog]);
+  }, [queue, initialAds, addLog, manualMode, externalManualQueue, captureStartPercent, captureEndPercent]);
+
+  // Reset manual queue index when manual queue changes
+  const resetManualQueueIndex = useCallback(() => {
+    manualQueueIndexRef.current = 0;
+  }, []);
 
   const queueStats = useMemo(() => ({
     total: queue.length,
@@ -177,5 +205,6 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
     addLog,
     queueStats,
     updateQueue,
+    resetManualQueueIndex,
   };
 };

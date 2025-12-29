@@ -3,6 +3,7 @@ import { AdMetadata, DemographicCounts, DetectionResult } from '@/types/ad';
 import { VideoPlayer } from '@/components/VideoPlayer';
 import { DemographicStats } from '@/components/DemographicStats';
 import { AdQueue } from '@/components/AdQueue';
+import { ManualQueueEditor } from '@/components/ManualQueueEditor';
 import { SystemLogs } from '@/components/SystemLogs';
 import { WebcamPreview } from '@/components/WebcamPreview';
 import { SettingsPanel, CaptureSettings } from '@/components/SettingsPanel';
@@ -64,6 +65,22 @@ const SmartAdsSystem = () => {
   const [currentViewers, setCurrentViewers] = useState<DetectionResult[]>([]);
   const [testMode, setTestMode] = useState(false);
   const [manualMode, setManualMode] = useState(false);
+  const [manualQueue, setManualQueue] = useState<AdMetadata[]>(() => {
+    const saved = localStorage.getItem('smartads-manual-queue');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  });
+
+  // Save manual queue to localStorage
+  useEffect(() => {
+    localStorage.setItem('smartads-manual-queue', JSON.stringify(manualQueue));
+  }, [manualQueue]);
   
   const captureIntervalRef = useRef<number | null>(null);
   const isCapturingRef = useRef(false);
@@ -73,10 +90,12 @@ const SmartAdsSystem = () => {
 
   const { videoRef, isActive: webcamActive, hasPermission, error: webcamError, startWebcam, stopWebcam } = useWebcam();
   const { isModelLoaded, isLoading: modelsLoading, error: modelError, detectFaces } = useFaceDetection();
-  const { queue, logs, getNextAd, reorderQueue, addLog, updateQueue } = useAdQueue({
+  const { queue, logs, getNextAd, reorderQueue, addLog, updateQueue, resetManualQueueIndex } = useAdQueue({
     customAds: adsWithCaptureWindows,
     captureStartPercent: captureSettings.startPercent,
     captureEndPercent: captureSettings.endPercent,
+    manualMode,
+    manualQueue,
   });
 
   // Update queue when ads change
@@ -208,11 +227,21 @@ const SmartAdsSystem = () => {
       }
       setDemographics({ male: 0, female: 0, kid: 0, young: 0, adult: 0 });
       setCurrentViewers([]);
-      addLog('info', '📺 MANUAL MODE: Detection disabled - ads will play sequentially');
+      resetManualQueueIndex();
+      addLog('info', '📺 MANUAL MODE: Detection disabled - ads will play from playlist');
     } else {
       addLog('info', '🎯 AUTO MODE: Detection enabled - ads will target demographics');
     }
-  }, [testMode, stopTestMode, stopDetectionLoop, stopWebcam, addLog]);
+  }, [testMode, stopTestMode, stopDetectionLoop, stopWebcam, addLog, resetManualQueueIndex]);
+
+  // Handle manual queue change
+  const handleManualQueueChange = useCallback((newQueue: AdMetadata[]) => {
+    setManualQueue(newQueue);
+    resetManualQueueIndex();
+    if (newQueue.length > 0) {
+      addLog('info', `📋 Playlist updated: ${newQueue.length} ads`);
+    }
+  }, [resetManualQueueIndex, addLog]);
 
   // Capture window logic - only runs when not in manual mode
   useEffect(() => {
@@ -399,7 +428,7 @@ const SmartAdsSystem = () => {
         </div>
         <p className="text-muted-foreground text-sm">
           {manualMode ? (
-            <span className="text-warning">Manual Mode: Ads play sequentially without detection</span>
+            <span className="text-warning">Manual Mode: Playing from custom playlist ({manualQueue.length} ads) in loop</span>
           ) : (
             <>Dynamic ad targeting powered by real-time demographic detection • Camera activates at {captureSettings.startPercent}% of ad duration</>
           )}
@@ -444,10 +473,18 @@ const SmartAdsSystem = () => {
             isCapturing={isCapturing}
           />
           
-          <AdQueue
-            queue={queue}
-            currentAdId={currentAd?.id || null}
-          />
+          {manualMode ? (
+            <ManualQueueEditor
+              availableAds={customAds}
+              manualQueue={manualQueue}
+              onQueueChange={handleManualQueueChange}
+            />
+          ) : (
+            <AdQueue
+              queue={queue}
+              currentAdId={currentAd?.id || null}
+            />
+          )}
         </div>
       </div>
 
