@@ -50,13 +50,48 @@ export const AdManager = ({
 }: AdManagerProps) => {
   const [open, setOpen] = useState(false);
   const [editingAd, setEditingAd] = useState<AdMetadata | null>(null);
+  const [isLoadingDuration, setIsLoadingDuration] = useState(false);
   const [newAd, setNewAd] = useState<Partial<AdMetadata>>({
     title: '',
     gender: 'all',
     ageGroup: 'all',
-    duration: 15,
+    duration: 30,
     videoUrl: '',
   });
+
+  // Auto-detect video duration when URL changes
+  const detectVideoDuration = async (url: string) => {
+    if (!url) return;
+    
+    setIsLoadingDuration(true);
+    try {
+      const video = document.createElement('video');
+      video.preload = 'metadata';
+      
+      await new Promise<void>((resolve, reject) => {
+        video.onloadedmetadata = () => {
+          const duration = Math.round(video.duration);
+          if (duration > 0 && duration < 3600) {
+            setNewAd(prev => ({ ...prev, duration }));
+          }
+          resolve();
+        };
+        video.onerror = () => reject(new Error('Failed to load video'));
+        video.src = url;
+      });
+    } catch (error) {
+      console.log('Could not auto-detect duration:', error);
+    } finally {
+      setIsLoadingDuration(false);
+    }
+  };
+
+  const handleUrlChange = (url: string) => {
+    setNewAd({ ...newAd, videoUrl: url });
+    if (url && url.startsWith('http')) {
+      detectVideoDuration(url);
+    }
+  };
 
   const handleRemoveAd = (id: string) => {
     const ad = ads.find(a => a.id === id);
@@ -100,7 +135,7 @@ export const AdManager = ({
       title: '',
       gender: 'all',
       ageGroup: 'all',
-      duration: 15,
+      duration: 30,
       videoUrl: '',
     });
   };
@@ -143,9 +178,9 @@ export const AdManager = ({
                 onChange={(e) => setNewAd({ ...newAd, title: e.target.value })}
               />
               <Input
-                placeholder="Video URL"
+                placeholder="Video URL (duration auto-detected)"
                 value={newAd.videoUrl || ''}
-                onChange={(e) => setNewAd({ ...newAd, videoUrl: e.target.value })}
+                onChange={(e) => handleUrlChange(e.target.value)}
               />
             </div>
 
@@ -185,13 +220,18 @@ export const AdManager = ({
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs text-muted-foreground">Duration (s)</label>
+                <label className="text-xs text-muted-foreground flex items-center gap-1">
+                  Duration (s)
+                  {isLoadingDuration && (
+                    <span className="text-primary animate-pulse">detecting...</span>
+                  )}
+                </label>
                 <Input
                   type="number"
                   min={5}
-                  max={300}
-                  value={newAd.duration || 15}
-                  onChange={(e) => setNewAd({ ...newAd, duration: parseInt(e.target.value) || 15 })}
+                  max={600}
+                  value={newAd.duration || 30}
+                  onChange={(e) => setNewAd({ ...newAd, duration: parseInt(e.target.value) || 30 })}
                 />
               </div>
             </div>
