@@ -11,8 +11,10 @@ import { useWebcam } from '@/hooks/useWebcam';
 import { useFaceDetection, resetSimulatedPerson } from '@/hooks/useFaceDetection';
 import { useAdQueue } from '@/hooks/useAdQueue';
 import { sampleAds } from '@/data/sampleAds';
-import { Tv, Zap, Activity, Play, Square, AlertCircle, CheckCircle } from 'lucide-react';
+import { Tv, Zap, Activity, Play, Square, AlertCircle, CheckCircle, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 
 const SmartAdsSystem = () => {
   // Settings state - default to 40% capture window (60%-100%)
@@ -61,6 +63,7 @@ const SmartAdsSystem = () => {
   });
   const [currentViewers, setCurrentViewers] = useState<DetectionResult[]>([]);
   const [testMode, setTestMode] = useState(false);
+  const [manualMode, setManualMode] = useState(false);
   
   const captureIntervalRef = useRef<number | null>(null);
   const isCapturingRef = useRef(false);
@@ -191,9 +194,29 @@ const SmartAdsSystem = () => {
     addLog('info', '🧪 TEST MODE: Ended');
   }, [stopDetectionLoop, stopWebcam, addLog]);
 
-  // Capture window logic
+  // Toggle manual mode
+  const handleManualModeToggle = useCallback((enabled: boolean) => {
+    setManualMode(enabled);
+    if (enabled) {
+      // Stop any active detection
+      if (testMode) stopTestMode();
+      if (isCapturingRef.current) {
+        stopDetectionLoop();
+        stopWebcam();
+        isCapturingRef.current = false;
+        setIsCapturing(false);
+      }
+      setDemographics({ male: 0, female: 0, kid: 0, young: 0, adult: 0 });
+      setCurrentViewers([]);
+      addLog('info', '📺 MANUAL MODE: Detection disabled - ads will play sequentially');
+    } else {
+      addLog('info', '🎯 AUTO MODE: Detection enabled - ads will target demographics');
+    }
+  }, [testMode, stopTestMode, stopDetectionLoop, stopWebcam, addLog]);
+
+  // Capture window logic - only runs when not in manual mode
   useEffect(() => {
-    if (!currentAd || !isPlaying) return;
+    if (!currentAd || !isPlaying || manualMode) return;
 
     const inCaptureWindow = 
       currentTime >= currentAd.captureStart && 
@@ -241,7 +264,7 @@ const SmartAdsSystem = () => {
         reorderQueue(demo);
       }
     }
-  }, [currentTime, currentAd, isPlaying, startWebcam, stopWebcam, startDetectionLoop, stopDetectionLoop, addLog, reorderQueue]);
+  }, [currentTime, currentAd, isPlaying, manualMode, startWebcam, stopWebcam, startDetectionLoop, stopDetectionLoop, addLog, reorderQueue]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -299,12 +322,29 @@ const SmartAdsSystem = () => {
             Smart<span className="text-primary">Ads</span> System
           </h1>
           <div className="ml-auto flex items-center gap-3">
+            {/* Manual Mode Toggle */}
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/50 border border-border">
+              {manualMode ? (
+                <EyeOff className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <Eye className="h-4 w-4 text-primary" />
+              )}
+              <Label htmlFor="manual-mode" className="text-sm font-medium cursor-pointer">
+                {manualMode ? 'Manual' : 'Auto'}
+              </Label>
+              <Switch
+                id="manual-mode"
+                checked={manualMode}
+                onCheckedChange={handleManualModeToggle}
+              />
+            </div>
+
             {/* Test Detection Button */}
             <Button
               variant={testMode ? "destructive" : "outline"}
               size="sm"
               onClick={testMode ? stopTestMode : startTestMode}
-              disabled={modelsLoading}
+              disabled={modelsLoading || manualMode}
               className="flex items-center gap-2"
             >
               {testMode ? (
@@ -358,7 +398,11 @@ const SmartAdsSystem = () => {
           </div>
         </div>
         <p className="text-muted-foreground text-sm">
-          Dynamic ad targeting powered by real-time demographic detection • Camera activates at {captureSettings.startPercent}% of ad duration
+          {manualMode ? (
+            <span className="text-warning">Manual Mode: Ads play sequentially without detection</span>
+          ) : (
+            <>Dynamic ad targeting powered by real-time demographic detection • Camera activates at {captureSettings.startPercent}% of ad duration</>
+          )}
           {testMode && <span className="ml-2 text-primary font-medium">• TEST MODE ACTIVE</span>}
         </p>
       </header>
