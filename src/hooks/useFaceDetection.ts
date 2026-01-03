@@ -69,15 +69,25 @@ export const useFaceDetection = () => {
     try {
       console.log('[Detection] Running face-api detection...');
       
-      // Lower threshold for better detection, larger input for accuracy
-      const options = new faceapi.TinyFaceDetectorOptions({
-        inputSize: 416,
-        scoreThreshold: 0.3
-      });
-
-      const detections = await faceapi
-        .detectAllFaces(videoElement, options)
+      // First pass: standard detection with moderate threshold
+      let detections = await faceapi
+        .detectAllFaces(videoElement, new faceapi.TinyFaceDetectorOptions({
+          inputSize: 512,  // Larger input for better accuracy
+          scoreThreshold: 0.2  // Lower threshold for covered faces
+        }))
         .withAgeAndGender();
+
+      // Second pass: if no faces found, try with even lower threshold
+      // This helps detect faces with hijab, mask, or partial occlusion
+      if (detections.length === 0) {
+        console.log('[Detection] No faces found, retrying with lower threshold...');
+        detections = await faceapi
+          .detectAllFaces(videoElement, new faceapi.TinyFaceDetectorOptions({
+            inputSize: 608,  // Even larger input
+            scoreThreshold: 0.1  // Very low threshold for difficult cases
+          }))
+          .withAgeAndGender();
+      }
 
       console.log('[Detection] Found', detections.length, 'faces');
 
