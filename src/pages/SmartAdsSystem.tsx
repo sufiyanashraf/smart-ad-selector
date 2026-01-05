@@ -8,6 +8,7 @@ import { SystemLogs } from '@/components/SystemLogs';
 import { WebcamPreview } from '@/components/WebcamPreview';
 import { SettingsPanel, CaptureSettings } from '@/components/SettingsPanel';
 import { AdManager } from '@/components/AdManager';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { useWebcam } from '@/hooks/useWebcam';
 import { useFaceDetection, resetSimulatedPerson } from '@/hooks/useFaceDetection';
 import { useAdQueue } from '@/hooks/useAdQueue';
@@ -420,6 +421,7 @@ const SmartAdsSystem = () => {
               settings={captureSettings}
               onSettingsChange={handleSettingsChange}
             />
+            <ThemeToggle />
             
             {/* Model Status */}
             <div className="flex items-center gap-2 text-sm pl-3 border-l border-border">
