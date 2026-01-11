@@ -6,7 +6,7 @@ import { DetectionResult, FaceBoundingBox } from '@/types/ad';
 // Use local models from public folder - no CORS issues
 const MODEL_URL = '/models';
 
-export const useFaceDetection = () => {
+export const useFaceDetection = (sensitivity: number = 0.4) => {
   const [isModelLoaded, setIsModelLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -67,13 +67,13 @@ export const useFaceDetection = () => {
     }
 
     try {
-      console.log('[Detection] Running face-api detection...');
+      console.log('[Detection] Running face-api detection with threshold:', sensitivity);
       
-      // Balanced detection: good sensitivity without false positives
+      // Detection with configurable sensitivity
       const detections = await faceapi
         .detectAllFaces(videoElement, new faceapi.TinyFaceDetectorOptions({
           inputSize: 512,  // Good balance of speed and accuracy
-          scoreThreshold: 0.4  // Balanced threshold - avoids false positives while catching real faces
+          scoreThreshold: sensitivity  // Configurable threshold from settings
         }))
         .withAgeAndGender();
 
@@ -117,7 +117,7 @@ export const useFaceDetection = () => {
       console.error('[Detection] Error:', err);
       return [];
     }
-  }, [isModelLoaded]);
+  }, [isModelLoaded, sensitivity]);
 
   return { isModelLoaded, isLoading, error, detectFaces };
 };
