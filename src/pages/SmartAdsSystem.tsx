@@ -104,7 +104,10 @@ const SmartAdsSystem = () => {
     startScreenCapture,
     stopWebcam 
   } = useWebcam();
-  const { isModelLoaded, isLoading: modelsLoading, error: modelError, detectFaces } = useFaceDetection(captureSettings.detectionSensitivity);
+  const { isModelLoaded, isLoading: modelsLoading, error: modelError, detectFaces } = useFaceDetection(
+    captureSettings.detectionSensitivity,
+    { sourceMode: inputMode }
+  );
   const { queue, logs, getNextAd, reorderQueue, addLog, updateQueue, resetManualQueueIndex } = useAdQueue({
     customAds: adsWithCaptureWindows,
     captureStartPercent: captureSettings.startPercent,
