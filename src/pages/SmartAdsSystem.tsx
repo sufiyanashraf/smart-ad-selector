@@ -182,7 +182,7 @@ const SmartAdsSystem = () => {
     }
   }, []);
 
-  // Start detection with current input source
+  // Start detection with current input source - runs continuously until manually stopped
   const startDetectionWithSource = useCallback(async (
     sourceStarter: () => Promise<boolean>,
     sourceName: string
@@ -190,7 +190,7 @@ const SmartAdsSystem = () => {
     if (testMode) return;
     
     setTestMode(true);
-    addLog('info', `🧪 TEST MODE: Starting ${sourceName} detection (30s)...`);
+    addLog('info', `🧪 TEST MODE: Starting ${sourceName} detection (continuous)...`);
     
     // Reset demographics
     setDemographics({ male: 0, female: 0, kid: 0, young: 0, adult: 0 });
@@ -198,7 +198,7 @@ const SmartAdsSystem = () => {
     
     const success = await sourceStarter();
     if (success) {
-      addLog('webcam', `✅ ${sourceName} activated for test`);
+      addLog('webcam', `✅ ${sourceName} activated - runs until manually stopped`);
       isCapturingRef.current = true;
       setIsCapturing(true);
       
@@ -206,10 +206,7 @@ const SmartAdsSystem = () => {
         startDetectionLoop();
       }, 500);
       
-      // Auto-stop after 30 seconds
-      testModeTimeoutRef.current = window.setTimeout(() => {
-        stopTestMode();
-      }, 30000);
+      // No auto-stop - runs continuously until user stops it
     } else {
       addLog('webcam', `❌ ${sourceName} failed to start`);
       setTestMode(false);
