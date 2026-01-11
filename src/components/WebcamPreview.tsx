@@ -1,7 +1,8 @@
 import { RefObject, useRef, useEffect } from 'react';
-import { Camera, CameraOff, AlertCircle } from 'lucide-react';
+import { Camera, CameraOff, AlertCircle, Monitor, FileVideo } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DetectionResult } from '@/types/ad';
+import { InputSourceMode } from '@/hooks/useWebcam';
 
 interface WebcamPreviewProps {
   videoRef: RefObject<HTMLVideoElement>;
@@ -10,6 +11,8 @@ interface WebcamPreviewProps {
   error: string | null;
   isCapturing: boolean;
   detections?: DetectionResult[];
+  inputMode?: InputSourceMode;
+  videoFileName?: string | null;
 }
 
 export const WebcamPreview = ({
@@ -19,8 +22,33 @@ export const WebcamPreview = ({
   error,
   isCapturing,
   detections = [],
+  inputMode = 'webcam',
+  videoFileName,
 }: WebcamPreviewProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const getSourceIcon = () => {
+    if (!isActive) return <CameraOff className="h-4 w-4 text-muted-foreground" />;
+    switch (inputMode) {
+      case 'webcam':
+        return <Camera className="h-4 w-4 text-primary" />;
+      case 'video':
+        return <FileVideo className="h-4 w-4 text-primary" />;
+      case 'screen':
+        return <Monitor className="h-4 w-4 text-primary" />;
+    }
+  };
+
+  const getSourceLabel = () => {
+    switch (inputMode) {
+      case 'webcam':
+        return 'Webcam Feed';
+      case 'video':
+        return videoFileName ? `Video: ${videoFileName.slice(0, 20)}${videoFileName.length > 20 ? '...' : ''}` : 'Video File';
+      case 'screen':
+        return 'Screen Capture';
+    }
+  };
 
   // Draw bounding boxes on canvas
   useEffect(() => {
@@ -123,12 +151,8 @@ export const WebcamPreview = ({
     <div className="glass-card p-4 space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="font-display font-semibold text-sm flex items-center gap-2">
-          {isActive ? (
-            <Camera className="h-4 w-4 text-primary" />
-          ) : (
-            <CameraOff className="h-4 w-4 text-muted-foreground" />
-          )}
-          Webcam Feed
+          {getSourceIcon()}
+          {getSourceLabel()}
           {detections.length > 0 && (
             <span className="ml-2 px-2 py-0.5 bg-primary/20 text-primary text-xs rounded-full">
               {detections.length} face{detections.length !== 1 ? 's' : ''}
@@ -214,7 +238,9 @@ export const WebcamPreview = ({
       <p className="text-xs text-muted-foreground text-center">
         {isActive && detections.length > 0 
           ? `Detecting ${detections.length} person(s) with bounding boxes`
-          : 'Camera activates only during capture window'
+          : inputMode === 'webcam' 
+            ? 'Use dropdown to select webcam, video file, or screen capture'
+            : `${inputMode === 'video' ? 'Video file' : 'Screen capture'} mode - select source from dropdown`
         }
       </p>
     </div>
