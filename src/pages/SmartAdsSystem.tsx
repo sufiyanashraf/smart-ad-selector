@@ -56,6 +56,7 @@ const SmartAdsSystem = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [isCapturing, setIsCapturing] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [demographics, setDemographics] = useState<DemographicCounts>({
     male: 0,
     female: 0,
@@ -361,6 +362,37 @@ const SmartAdsSystem = () => {
     end: currentAd.captureEnd,
   } : null;
 
+  // Fullscreen mode - renders only the video player
+  if (isFullscreen) {
+    return (
+      <div className="fixed inset-0 z-50 bg-black">
+        {/* Hidden webcam for detection - keeps running in background */}
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          className="hidden"
+        />
+        
+        <VideoPlayer
+          ad={currentAd}
+          isPlaying={isPlaying}
+          onTimeUpdate={handleTimeUpdate}
+          onDurationDetected={handleDurationDetected}
+          onEnded={handleAdEnded}
+          onPlay={() => setIsPlaying(true)}
+          onPause={() => setIsPlaying(false)}
+          onSkip={handleSkip}
+          isCapturing={isCapturing}
+          captureWindow={captureWindow}
+          isFullscreen={true}
+          onFullscreenToggle={() => setIsFullscreen(false)}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background p-6 lg:p-8">
       {/* Header */}
@@ -474,6 +506,8 @@ const SmartAdsSystem = () => {
             onSkip={handleSkip}
             isCapturing={isCapturing}
             captureWindow={captureWindow}
+            isFullscreen={false}
+            onFullscreenToggle={() => setIsFullscreen(true)}
           />
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
