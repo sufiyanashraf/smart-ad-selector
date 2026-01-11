@@ -14,16 +14,17 @@ import { useWebcam } from '@/hooks/useWebcam';
 import { useFaceDetection, resetSimulatedPerson } from '@/hooks/useFaceDetection';
 import { useAdQueue } from '@/hooks/useAdQueue';
 import { sampleAds } from '@/data/sampleAds';
-import { Tv, Zap, Activity, AlertCircle, CheckCircle, Eye, EyeOff } from 'lucide-react';
+import { Tv, Zap, Activity, AlertCircle, CheckCircle, Eye, EyeOff, Play, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 
 const SmartAdsSystem = () => {
-  // Settings state - default to 40% capture window (60%-100%)
+  // Settings state - default to 40% capture window (60%-100%) and medium sensitivity
   const [captureSettings, setCaptureSettings] = useState<CaptureSettings>({
     startPercent: 60,
     endPercent: 100,
+    detectionSensitivity: 0.4,
   });
 
   // Custom ads state - persisted to localStorage
@@ -103,7 +104,7 @@ const SmartAdsSystem = () => {
     startScreenCapture,
     stopWebcam 
   } = useWebcam();
-  const { isModelLoaded, isLoading: modelsLoading, error: modelError, detectFaces } = useFaceDetection();
+  const { isModelLoaded, isLoading: modelsLoading, error: modelError, detectFaces } = useFaceDetection(captureSettings.detectionSensitivity);
   const { queue, logs, getNextAd, reorderQueue, addLog, updateQueue, resetManualQueueIndex } = useAdQueue({
     customAds: adsWithCaptureWindows,
     captureStartPercent: captureSettings.startPercent,
@@ -435,6 +436,29 @@ const SmartAdsSystem = () => {
             Smart<span className="text-primary">Ads</span> System
           </h1>
           <div className="ml-auto flex items-center gap-3">
+            {/* Test Mode Toggle */}
+            <div className="flex items-center gap-2">
+              <Button
+                variant={testMode ? "destructive" : "default"}
+                size="sm"
+                onClick={testMode ? stopTestMode : startTestMode}
+                disabled={modelsLoading || manualMode}
+                className="gap-2"
+              >
+                {testMode ? (
+                  <>
+                    <Square className="h-4 w-4" />
+                    Stop Test
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-4 w-4" />
+                    Test Mode
+                  </>
+                )}
+              </Button>
+            </div>
+
             {/* Manual Mode Toggle */}
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/50 border border-border">
               {manualMode ? (
@@ -531,7 +555,7 @@ const SmartAdsSystem = () => {
             onFullscreenToggle={() => setIsFullscreen(true)}
           />
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 gap-6">
             <WebcamPreview
               videoRef={videoRef}
               isActive={webcamActive}
@@ -542,8 +566,8 @@ const SmartAdsSystem = () => {
               inputMode={inputMode}
               videoFileName={videoFileName}
             />
-            <SystemLogs logs={logs} />
           </div>
+          <SystemLogs logs={logs} />
         </div>
 
         {/* Right Column - Stats & Queue */}

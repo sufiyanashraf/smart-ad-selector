@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Settings, Percent } from 'lucide-react';
+import { Settings, Percent, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import {
@@ -14,6 +14,7 @@ import {
 interface CaptureSettings {
   startPercent: number;
   endPercent: number;
+  detectionSensitivity: number;
 }
 
 interface SettingsPanelProps {
@@ -48,6 +49,19 @@ export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps
     }));
   };
 
+  const handleSensitivityChange = (value: number[]) => {
+    setLocalSettings(prev => ({
+      ...prev,
+      detectionSensitivity: value[0],
+    }));
+  };
+
+  const getSensitivityLabel = (value: number) => {
+    if (value <= 0.35) return 'High (more detections)';
+    if (value <= 0.45) return 'Medium';
+    return 'Low (fewer false positives)';
+  };
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -58,13 +72,38 @@ export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="font-display">Capture Window Settings</DialogTitle>
+          <DialogTitle className="font-display">System Settings</DialogTitle>
           <DialogDescription>
-            Configure when the camera activates during ads to detect viewers.
+            Configure capture window and detection sensitivity.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6 py-4">
+          {/* Detection Sensitivity */}
+          <div className="space-y-3 p-4 rounded-lg bg-primary/5 border border-primary/20">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium flex items-center gap-2">
+                <Eye className="h-4 w-4 text-primary" />
+                Detection Sensitivity
+              </label>
+              <span className="text-sm text-primary font-display font-bold">
+                {(1 - localSettings.detectionSensitivity).toFixed(2)}
+              </span>
+            </div>
+            <Slider
+              value={[localSettings.detectionSensitivity]}
+              onValueChange={handleSensitivityChange}
+              min={0.3}
+              max={0.6}
+              step={0.05}
+              className="w-full"
+            />
+            <p className="text-xs text-muted-foreground">
+              {getSensitivityLabel(localSettings.detectionSensitivity)} • 
+              Lower threshold = more faces detected (may include false positives)
+            </p>
+          </div>
+
           {/* Start Percentage */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -111,7 +150,7 @@ export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps
           <div className="bg-muted rounded-lg p-4 space-y-2">
             <div className="flex items-center gap-2 text-sm font-medium">
               <Percent className="h-4 w-4 text-primary" />
-              Preview
+              Capture Window Preview
             </div>
             <div className="relative h-3 bg-background rounded-full overflow-hidden">
               <div 
