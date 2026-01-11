@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { AdMetadata, DemographicCounts, AdScore, LogEntry } from '@/types/ad';
 import { sampleAds } from '@/data/sampleAds';
 
@@ -9,6 +9,14 @@ interface UseAdQueueProps {
   manualMode?: boolean;
   manualQueue?: AdMetadata[];
 }
+
+// Stable helper to calculate capture windows
+const applyCapture = (ads: AdMetadata[], startPercent: number, endPercent: number) =>
+  ads.map(ad => ({
+    ...ad,
+    captureStart: Math.floor(ad.duration * startPercent / 100),
+    captureEnd: Math.floor(ad.duration * endPercent / 100),
+  }));
 
 export const useAdQueue = (props?: UseAdQueueProps) => {
   const { 
@@ -21,19 +29,19 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
   
   const manualQueueIndexRef = useRef(0);
 
-  const initialAds = useMemo(() => {
-    const ads = customAds && customAds.length > 0 ? customAds : sampleAds;
-    return ads.map(ad => ({
-      ...ad,
-      captureStart: Math.floor(ad.duration * captureStartPercent / 100),
-      captureEnd: Math.floor(ad.duration * captureEndPercent / 100),
-    }));
-  }, [customAds, captureStartPercent, captureEndPercent]);
-
-  const [queue, setQueue] = useState<AdMetadata[]>(initialAds);
+  // Use a stable initializer (only runs once) to avoid React queue errors
+  const [queue, setQueue] = useState<AdMetadata[]>(() =>
+    applyCapture(customAds && customAds.length > 0 ? customAds : sampleAds, captureStartPercent, captureEndPercent)
+  );
   const [playedAds, setPlayedAds] = useState<string[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const lastPlayedIdRef = useRef<string | null>(null);
+
+  // Memoized version for internal use (not for initializing state)
+  const initialAds = useMemo(() => {
+    const ads = customAds && customAds.length > 0 ? customAds : sampleAds;
+    return applyCapture(ads, captureStartPercent, captureEndPercent);
+  }, [customAds, captureStartPercent, captureEndPercent]);
 
   const updateQueue = useCallback((ads: AdMetadata[]) => {
     const updatedAds = ads.map(ad => ({
