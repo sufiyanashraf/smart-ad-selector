@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import * as faceapi from 'face-api.js';
 import * as tf from '@tensorflow/tfjs';
+import '@tensorflow/tfjs-backend-webgpu';
 import { DetectionResult, FaceBoundingBox } from '@/types/ad';
+import { DetectionDebugInfo, CCTVDetectionConfig, DEFAULT_CCTV_CONFIG, DEFAULT_WEBCAM_CONFIG } from '@/types/detection';
+import { createPreprocessedCanvas, PreprocessingOptions, ROIConfig } from '@/utils/imagePreprocessing';
 
 // Use local models from public folder - no CORS issues
 const MODEL_URL = '/models';
@@ -10,42 +13,40 @@ type SourceMode = 'webcam' | 'video' | 'screen';
 
 type FaceDetectionOptions = {
   sourceMode?: SourceMode;
+  cctvMode?: boolean;
+  config?: Partial<CCTVDetectionConfig>;
 };
 
-// Configuration constants for tuning
-const CONFIG = {
-  // Webcam settings (faces are usually larger and clearer)
-  webcam: {
-    inputSize: 512,
-    upscale: 1,
-    minFaceScore: 0.5,
-    minFaceSizePx: 40,
-  },
-  // Video/CCTV settings (faces can be small and blurry)
-  video: {
-    inputSize: 416,        // Fast first pass
-    rescueInputSize: 608,  // Second pass if no faces found
-    upscale: 1.5,          // Moderate upscale for rescue pass
-    minFaceScore: 0.35,    // Allow weaker detections
-    minFaceSizePx: 24,     // Allow smaller faces
-  },
-  // Screen capture - similar to webcam
-  screen: {
-    inputSize: 512,
-    upscale: 1,
-    minFaceScore: 0.45,
-    minFaceSizePx: 35,
-  },
-};
+interface DetectionStats {
+  lastFps: number;
+  lastLatency: number;
+  frameCount: number;
+  lastFrameTime: number;
+}
 
-export const useFaceDetection = (sensitivity: number = 0.4, options?: FaceDetectionOptions) => {
+export const useFaceDetection = (
+  sensitivity: number = 0.4,
+  options?: FaceDetectionOptions
+) => {
   const [isModelLoaded, setIsModelLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadingProgress, setLoadingProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [backend, setBackend] = useState<string>('');
+  const [ssdLoaded, setSsdLoaded] = useState(false);
+  
   const loadingRef = useRef(false);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const inFlightRef = useRef(false); // Prevent detection backlog
+  const inFlightRef = useRef(false);
+  const statsRef = useRef<DetectionStats>({
+    lastFps: 0,
+    lastLatency: 0,
+    frameCount: 0,
+    lastFrameTime: 0,
+  });
+  const debugInfoRef = useRef<DetectionDebugInfo | null>(null);
 
+  // Initialize backend and load models
   useEffect(() => {
     const loadModels = async () => {
       if (loadingRef.current) return;
@@ -53,21 +54,61 @@ export const useFaceDetection = (sensitivity: number = 0.4, options?: FaceDetect
 
       try {
         setIsLoading(true);
+        setLoadingProgress(10);
 
-        // Initialize TensorFlow.js backend first - this fixes the "backend undefined" error
+        // Try WebGPU first, fallback to WebGL
         console.log('[TensorFlow] Initializing backend...');
-        await tf.ready();
-        console.log('[TensorFlow] Backend ready:', tf.getBackend());
+        let selectedBackend = 'webgl';
+        
+        try {
+          if ('gpu' in navigator) {
+            await tf.setBackend('webgpu');
+            await tf.ready();
+            selectedBackend = 'webgpu';
+            console.log('[TensorFlow] ✅ Using WebGPU backend');
+          }
+        } catch (e) {
+          console.log('[TensorFlow] WebGPU not available, trying WebGL...');
+        }
+        
+        if (selectedBackend !== 'webgpu') {
+          try {
+            await tf.setBackend('webgl');
+            await tf.ready();
+            console.log('[TensorFlow] ✅ Using WebGL backend');
+          } catch (e) {
+            await tf.setBackend('cpu');
+            await tf.ready();
+            selectedBackend = 'cpu';
+            console.log('[TensorFlow] ⚠️ Using CPU backend (slower)');
+          }
+        }
+        
+        setBackend(tf.getBackend() || selectedBackend);
+        setLoadingProgress(30);
 
         console.log('[FaceAPI] Loading models from:', MODEL_URL);
 
+        // Load TinyFaceDetector and AgeGender first (essential)
         await Promise.all([
           faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
           faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL),
         ]);
-
-        console.log('[FaceAPI] ✅ Models loaded successfully!');
+        
+        console.log('[FaceAPI] ✅ TinyFaceDetector + AgeGender loaded');
+        setLoadingProgress(70);
         setIsModelLoaded(true);
+
+        // Try to load SSD Mobilenet for CCTV mode (optional, don't fail if missing)
+        try {
+          await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
+          console.log('[FaceAPI] ✅ SSD Mobilenet V1 loaded');
+          setSsdLoaded(true);
+        } catch (e) {
+          console.log('[FaceAPI] ⚠️ SSD Mobilenet not available, using TinyFace only');
+        }
+        
+        setLoadingProgress(100);
         setError(null);
       } catch (err) {
         console.error('[FaceAPI] ❌ Failed to load models:', err);
@@ -82,8 +123,21 @@ export const useFaceDetection = (sensitivity: number = 0.4, options?: FaceDetect
     loadModels();
   }, []);
 
-  // Helper: run detection on a given input with specified options
-  const runDetection = useCallback(async (
+  // Get effective config based on mode
+  const getConfig = useCallback((): CCTVDetectionConfig => {
+    const sourceMode = options?.sourceMode ?? 'webcam';
+    const cctvMode = options?.cctvMode ?? sourceMode === 'video';
+    const baseConfig = cctvMode ? DEFAULT_CCTV_CONFIG : DEFAULT_WEBCAM_CONFIG;
+    
+    return {
+      ...baseConfig,
+      sensitivity,
+      ...options?.config,
+    };
+  }, [sensitivity, options]);
+
+  // Run TinyFaceDetector
+  const runTinyDetection = useCallback(async (
     input: HTMLVideoElement | HTMLCanvasElement,
     inputSize: number,
     scoreThreshold: number
@@ -99,62 +153,87 @@ export const useFaceDetection = (sensitivity: number = 0.4, options?: FaceDetect
       .withAgeAndGender();
   }, []);
 
-  // Helper: create upscaled canvas from video
-  const createUpscaledCanvas = useCallback((
+  // Run SSD Mobilenet
+  const runSsdDetection = useCallback(async (
+    input: HTMLVideoElement | HTMLCanvasElement,
+    minConfidence: number
+  ) => {
+    if (!ssdLoaded) return [];
+    
+    return faceapi
+      .detectAllFaces(
+        input,
+        new faceapi.SsdMobilenetv1Options({
+          minConfidence,
+        })
+      )
+      .withAgeAndGender();
+  }, [ssdLoaded]);
+
+  // Create upscaled/preprocessed canvas
+  const createProcessedCanvas = useCallback((
     videoElement: HTMLVideoElement,
-    videoWidth: number,
-    videoHeight: number,
-    scale: number
+    preprocessing: PreprocessingOptions,
+    scale: number,
+    roi?: ROIConfig
   ): HTMLCanvasElement | null => {
-    const canvas = offscreenCanvasRef.current ?? document.createElement('canvas');
-    offscreenCanvasRef.current = canvas;
-
-    canvas.width = Math.round(videoWidth * scale);
-    canvas.height = Math.round(videoHeight * scale);
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-    return canvas;
+    return createPreprocessedCanvas(videoElement, preprocessing, scale, roi);
   }, []);
 
-  // Helper: filter and process detections
+  // Filter and process raw detections
   const processDetections = useCallback((
-    detections: Awaited<ReturnType<typeof faceapi.FaceDetection.prototype.forSize>>[],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    detections: any[],
     videoWidth: number,
     videoHeight: number,
     scaleBack: number,
-    minFaceScore: number,
-    minFaceSizePx: number
-  ): DetectionResult[] => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (detections as any[])
+    config: CCTVDetectionConfig,
+    detectorUsed: 'tiny' | 'ssd',
+    roiOffset?: { x: number; y: number }
+  ): { results: DetectionResult[]; rawCount: number; filteredCount: number } => {
+    const rawCount = detections.length;
+    
+    const results = detections
       .filter(detection => {
         const det = detection.detection ?? detection;
         const box = det.box;
         const faceScore = det.score;
+        
+        // Scale back bounding box
         const faceWidth = box.width / scaleBack;
         const faceHeight = box.height / scaleBack;
+        const faceX = box.x / scaleBack + (roiOffset?.x ?? 0);
+        const faceY = box.y / scaleBack + (roiOffset?.y ?? 0);
         
         // Filter by face detection score
-        if (faceScore < minFaceScore) {
-          console.log('[Detection] Filtered: low faceScore', faceScore.toFixed(2));
+        if (faceScore < config.minFaceScore) {
+          console.log('[Filter] Low faceScore:', faceScore.toFixed(2), '<', config.minFaceScore);
           return false;
         }
         
-        // Filter by minimum size
-        if (faceWidth < minFaceSizePx || faceHeight < minFaceSizePx) {
-          console.log('[Detection] Filtered: too small', faceWidth.toFixed(0), 'x', faceHeight.toFixed(0));
+        // Filter by minimum pixel size
+        if (faceWidth < config.minFaceSizePx || faceHeight < config.minFaceSizePx) {
+          console.log('[Filter] Too small:', faceWidth.toFixed(0), 'x', faceHeight.toFixed(0), 'px');
           return false;
         }
         
-        // Filter by aspect ratio (faces shouldn't be too elongated)
+        // Filter by percentage of frame
+        const facePercent = (faceWidth * faceHeight) / (videoWidth * videoHeight) * 100;
+        if (facePercent < config.minFaceSizePercent) {
+          console.log('[Filter] Too small percent:', facePercent.toFixed(2), '%');
+          return false;
+        }
+        
+        // Filter by aspect ratio (faces should be roughly square)
         const aspectRatio = faceWidth / faceHeight;
-        if (aspectRatio < 0.5 || aspectRatio > 2.0) {
-          console.log('[Detection] Filtered: bad aspect ratio', aspectRatio.toFixed(2));
+        if (aspectRatio < config.aspectRatioMin || aspectRatio > config.aspectRatioMax) {
+          console.log('[Filter] Bad aspect ratio:', aspectRatio.toFixed(2));
+          return false;
+        }
+        
+        // Check if face is within video bounds
+        if (faceX < 0 || faceY < 0 || faceX + faceWidth > videoWidth || faceY + faceHeight > videoHeight) {
+          console.log('[Filter] Out of bounds');
           return false;
         }
         
@@ -166,8 +245,8 @@ export const useFaceDetection = (sensitivity: number = 0.4, options?: FaceDetect
         const faceScore = det.score;
 
         const boundingBox: FaceBoundingBox = {
-          x: Math.max(0, box.x / scaleBack),
-          y: Math.max(0, box.y / scaleBack),
+          x: Math.max(0, box.x / scaleBack + (roiOffset?.x ?? 0)),
+          y: Math.max(0, box.y / scaleBack + (roiOffset?.y ?? 0)),
           width: Math.min(box.width / scaleBack, videoWidth - box.x / scaleBack),
           height: Math.min(box.height / scaleBack, videoHeight - box.y / scaleBack),
         };
@@ -189,12 +268,15 @@ export const useFaceDetection = (sensitivity: number = 0.4, options?: FaceDetect
           confidence: detection.genderProbability,
           faceScore,
           boundingBox,
-          trackingId: `${Math.round(boundingBox.x)}_${Math.round(boundingBox.y)}`,
+          trackingId: `${detectorUsed}_${Math.round(boundingBox.x)}_${Math.round(boundingBox.y)}`,
           lastSeen: Date.now(),
-        };
+        } as DetectionResult;
       });
+
+    return { results, rawCount, filteredCount: results.length };
   }, []);
 
+  // Main detection function
   const detectFaces = useCallback(async (
     videoElement: HTMLVideoElement
   ): Promise<DetectionResult[]> => {
@@ -204,100 +286,178 @@ export const useFaceDetection = (sensitivity: number = 0.4, options?: FaceDetect
       return [];
     }
 
-    if (!videoElement) {
-      console.log('[Detection] No video element');
-      return [];
-    }
-
-    if (videoElement.readyState < 2) {
-      console.log('[Detection] Video not ready, readyState:', videoElement.readyState);
-      return [];
-    }
-
-    if (!isModelLoaded) {
-      console.log('[Detection] Models not loaded yet');
+    if (!videoElement || videoElement.readyState < 2 || !isModelLoaded) {
       return [];
     }
 
     inFlightRef.current = true;
+    const startTime = performance.now();
 
     try {
-      const sourceMode: SourceMode = options?.sourceMode ?? 'webcam';
+      const config = getConfig();
+      const sourceMode = options?.sourceMode ?? 'webcam';
+      const isCCTV = options?.cctvMode ?? sourceMode === 'video';
+      
       const videoWidth = videoElement.videoWidth || 640;
       const videoHeight = videoElement.videoHeight || 480;
 
-      const config = CONFIG[sourceMode] || CONFIG.webcam;
-      const scoreThreshold = sensitivity;
-
-      console.log('[Detection] Running face-api', {
-        sourceMode,
-        sensitivity,
-        inputSize: config.inputSize,
-        minFaceScore: config.minFaceScore,
-      });
-
-      // ========== PASS 1: Fast detection on original video ==========
+      let detectorUsed: 'tiny' | 'ssd' = 'tiny';
+      let passUsed: 1 | 2 = 1;
+      let upscaled = false;
+      let preprocessingApplied = false;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let detections: any[] = await runDetection(videoElement, config.inputSize, scoreThreshold);
+      let detections: any[] = [];
+      let scaleBack = 1;
+      let roiOffset: { x: number; y: number } | undefined;
+
+      // Calculate ROI offset if enabled
+      if (config.roi.enabled) {
+        roiOffset = {
+          x: config.roi.x * videoWidth,
+          y: config.roi.y * videoHeight,
+        };
+      }
+
+      // ========== PASS 1: Standard detection ==========
+      if (config.detector === 'ssd' && ssdLoaded) {
+        // Use SSD only
+        detectorUsed = 'ssd';
+        console.log('[Detection] Pass 1: SSD Mobilenet');
+        detections = await runSsdDetection(videoElement, config.sensitivity);
+      } else if (config.detector === 'tiny') {
+        // Use TinyFace only
+        console.log('[Detection] Pass 1: TinyFaceDetector');
+        const inputSize = isCCTV ? 416 : 512;
+        detections = await runTinyDetection(videoElement, inputSize, config.sensitivity);
+      } else {
+        // Dual mode: Try TinyFace first (faster)
+        console.log('[Detection] Pass 1: TinyFaceDetector (dual mode)');
+        const inputSize = isCCTV ? 416 : 512;
+        detections = await runTinyDetection(videoElement, inputSize, config.sensitivity);
+      }
 
       console.log('[Detection] Pass 1 found', detections.length, 'raw faces');
 
-      // ========== PASS 2: CCTV rescue (only for video mode if no faces found) ==========
-      if (detections.length === 0 && sourceMode === 'video' && 'rescueInputSize' in config) {
-        console.log('[Detection] Pass 2: CCTV rescue with upscale...');
+      // ========== PASS 2: CCTV rescue with preprocessing + upscale + SSD ==========
+      if (detections.length === 0 && isCCTV && config.detector !== 'tiny') {
+        passUsed = 2;
+        console.log('[Detection] Pass 2: CCTV rescue with preprocessing...');
         
-        const upscaledCanvas = createUpscaledCanvas(
+        // Create preprocessed and upscaled canvas
+        const processedCanvas = createProcessedCanvas(
           videoElement,
-          videoWidth,
-          videoHeight,
-          config.upscale
+          config.preprocessing,
+          config.upscale,
+          config.roi.enabled ? config.roi : undefined
         );
 
-        if (upscaledCanvas) {
-          detections = await runDetection(
-            upscaledCanvas,
-            (config as typeof CONFIG.video).rescueInputSize,
-            Math.max(scoreThreshold - 0.05, 0.25) // Slightly lower threshold, but not below 0.25
-          );
-          
-          console.log('[Detection] Pass 2 found', detections.length, 'faces');
-          
-          // Process with upscale factor for coordinate correction
-          if (detections.length > 0) {
-            return processDetections(
-              detections,
-              videoWidth,
-              videoHeight,
-              config.upscale,
-              config.minFaceScore,
-              config.minFaceSizePx
+        if (processedCanvas) {
+          preprocessingApplied = config.preprocessing.gamma !== 1 || 
+                                 config.preprocessing.contrast !== 1 || 
+                                 config.preprocessing.sharpen > 0;
+          upscaled = config.upscale > 1;
+          scaleBack = config.upscale;
+
+          // Try SSD on preprocessed canvas (more accurate for small faces)
+          if (ssdLoaded) {
+            detectorUsed = 'ssd';
+            console.log('[Detection] Pass 2: SSD on preprocessed canvas');
+            detections = await runSsdDetection(
+              processedCanvas,
+              Math.max(config.sensitivity - 0.1, 0.2) // Lower threshold for rescue
             );
           }
+
+          // If still no faces, try TinyFace with larger input size
+          if (detections.length === 0) {
+            detectorUsed = 'tiny';
+            console.log('[Detection] Pass 2: TinyFace with 608 input size');
+            detections = await runTinyDetection(
+              processedCanvas,
+              608,
+              Math.max(config.sensitivity - 0.1, 0.2)
+            );
+          }
+
+          console.log('[Detection] Pass 2 found', detections.length, 'faces');
         }
       }
 
-      if (detections.length === 0) {
-        return [];
-      }
-
-      // Process pass 1 results (no upscale)
-      return processDetections(
+      // Process and filter detections
+      const { results, rawCount, filteredCount } = processDetections(
         detections,
         videoWidth,
         videoHeight,
-        1,
-        config.minFaceScore,
-        'minFaceSizePx' in config ? config.minFaceSizePx : 40
+        scaleBack,
+        config,
+        detectorUsed,
+        roiOffset
       );
+
+      // Update debug info
+      const endTime = performance.now();
+      const latency = endTime - startTime;
+      
+      // Calculate FPS
+      const stats = statsRef.current;
+      stats.frameCount++;
+      const now = performance.now();
+      if (now - stats.lastFrameTime >= 1000) {
+        stats.lastFps = stats.frameCount * 1000 / (now - stats.lastFrameTime);
+        stats.frameCount = 0;
+        stats.lastFrameTime = now;
+      }
+      stats.lastLatency = latency;
+
+      debugInfoRef.current = {
+        fps: stats.lastFps,
+        latencyMs: latency,
+        backend: backend || tf.getBackend() || 'unknown',
+        detectorUsed: config.detector,
+        passUsed,
+        rawDetections: rawCount,
+        filteredDetections: filteredCount,
+        trackedFaces: results.length,
+        preprocessing: preprocessingApplied,
+        upscaled,
+        frameSize: { width: videoWidth, height: videoHeight },
+        roiActive: config.roi.enabled,
+      };
+
+      return results;
     } catch (err) {
       console.error('[Detection] Error:', err);
       return [];
     } finally {
       inFlightRef.current = false;
     }
-  }, [isModelLoaded, sensitivity, options?.sourceMode, runDetection, createUpscaledCanvas, processDetections]);
+  }, [
+    isModelLoaded,
+    ssdLoaded,
+    backend,
+    options,
+    getConfig,
+    runTinyDetection,
+    runSsdDetection,
+    createProcessedCanvas,
+    processDetections,
+  ]);
 
-  return { isModelLoaded, isLoading, error, detectFaces };
+  // Get current debug info
+  const getDebugInfo = useCallback((): DetectionDebugInfo | null => {
+    return debugInfoRef.current;
+  }, []);
+
+  return {
+    isModelLoaded,
+    isLoading,
+    loadingProgress,
+    error,
+    backend,
+    ssdLoaded,
+    detectFaces,
+    getDebugInfo,
+  };
 };
 
 // Reset function (kept for compatibility)

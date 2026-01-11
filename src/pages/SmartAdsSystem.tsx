@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { AdMetadata, DemographicCounts, DetectionResult } from '@/types/ad';
+import { AdMetadata, DemographicCounts, DetectionResult, FaceBoundingBox } from '@/types/ad';
+import { TrackedFace, CCTVDetectionConfig, DEFAULT_CCTV_CONFIG, DEFAULT_WEBCAM_CONFIG, toDetectionResult } from '@/types/detection';
 import { VideoPlayer } from '@/components/VideoPlayer';
 import { DemographicStats } from '@/components/DemographicStats';
 import { AdQueue } from '@/components/AdQueue';
@@ -14,7 +15,7 @@ import { useWebcam } from '@/hooks/useWebcam';
 import { useFaceDetection, resetSimulatedPerson } from '@/hooks/useFaceDetection';
 import { useAdQueue } from '@/hooks/useAdQueue';
 import { sampleAds } from '@/data/sampleAds';
-import { Tv, Zap, Activity, AlertCircle, CheckCircle, Eye, EyeOff, Play, Square } from 'lucide-react';
+import { Tv, Zap, Activity, AlertCircle, CheckCircle, Eye, EyeOff, Play, Square, Cpu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
@@ -26,6 +27,10 @@ const SmartAdsSystem = () => {
     endPercent: 100,
     detectionSensitivity: 0.4,
   });
+
+  // CCTV mode settings
+  const [cctvMode, setCctvMode] = useState(false);
+  const [debugMode, setDebugMode] = useState(false);
 
   // Custom ads state - persisted to localStorage
   const [customAds, setCustomAds] = useState<AdMetadata[]>(() => {
@@ -92,9 +97,13 @@ const SmartAdsSystem = () => {
   const lastDemographicsRef = useRef<DemographicCounts>({ male: 0, female: 0, kid: 0, young: 0, adult: 0 });
   const testModeTimeoutRef = useRef<number | null>(null);
   
-  // Temporal tracking cache for smoothing detections
-  const trackedFacesRef = useRef<Map<string, DetectionResult & { missedFrames: number }>>(new Map());
-  const HOLD_FRAMES = 2; // How many missed frames before dropping a face
+  // Advanced face tracking with Kalman-style smoothing
+  const trackedFacesRef = useRef<Map<string, TrackedFace>>(new Map());
+  
+  // Tracking config based on mode
+  const trackingConfig = useMemo(() => {
+    return cctvMode ? DEFAULT_CCTV_CONFIG : DEFAULT_WEBCAM_CONFIG;
+  }, [cctvMode]);
 
   const { 
     videoRef, 
@@ -108,10 +117,27 @@ const SmartAdsSystem = () => {
     startScreenCapture,
     stopWebcam 
   } = useWebcam();
-  const { isModelLoaded, isLoading: modelsLoading, error: modelError, detectFaces } = useFaceDetection(
+  
+  const { 
+    isModelLoaded, 
+    isLoading: modelsLoading, 
+    loadingProgress,
+    error: modelError, 
+    backend,
+    ssdLoaded,
+    detectFaces,
+    getDebugInfo 
+  } = useFaceDetection(
     captureSettings.detectionSensitivity,
-    { sourceMode: inputMode }
+    { 
+      sourceMode: inputMode,
+      cctvMode,
+      config: {
+        debugMode,
+      }
+    }
   );
+  
   const { queue, logs, getNextAd, reorderQueue, addLog, updateQueue, resetManualQueueIndex } = useAdQueue({
     customAds: adsWithCaptureWindows,
     captureStartPercent: captureSettings.startPercent,
@@ -152,7 +178,7 @@ const SmartAdsSystem = () => {
   }, [addLog]);
 
   // Helper: Calculate IoU (Intersection over Union) for face matching
-  const calculateIoU = useCallback((box1: DetectionResult['boundingBox'], box2: DetectionResult['boundingBox']): number => {
+  const calculateIoU = useCallback((box1?: FaceBoundingBox, box2?: FaceBoundingBox): number => {
     if (!box1 || !box2) return 0;
     
     const x1 = Math.max(box1.x, box2.x);
@@ -168,6 +194,18 @@ const SmartAdsSystem = () => {
     return union > 0 ? intersection / union : 0;
   }, []);
 
+  // Helper: Calculate center distance
+  const calculateCenterDistance = useCallback((box1?: FaceBoundingBox, box2?: FaceBoundingBox): number => {
+    if (!box1 || !box2) return Infinity;
+    
+    const cx1 = box1.x + box1.width / 2;
+    const cy1 = box1.y + box1.height / 2;
+    const cx2 = box2.x + box2.width / 2;
+    const cy2 = box2.y + box2.height / 2;
+    
+    return Math.sqrt(Math.pow(cx2 - cx1, 2) + Math.pow(cy2 - cy1, 2));
+  }, []);
+
   // Start detection loop - detects current viewers in frame
   const startDetectionLoop = useCallback(() => {
     if (captureIntervalRef.current) {
@@ -176,6 +214,7 @@ const SmartAdsSystem = () => {
 
     // Clear tracking cache on new detection session
     trackedFacesRef.current.clear();
+    const now = Date.now();
 
     captureIntervalRef.current = window.setInterval(async () => {
       if (!isCapturingRef.current || !videoRef.current) return;
@@ -184,48 +223,125 @@ const SmartAdsSystem = () => {
       const results = await detectFaces(videoRef.current);
       
       const tracked = trackedFacesRef.current;
-      const now = Date.now();
+      const currentTime = Date.now();
+      const config = trackingConfig;
       
-      // Match new detections to tracked faces using IoU
+      // Match new detections to tracked faces using IoU + distance
       const matchedIds = new Set<string>();
+      const usedDetections = new Set<number>();
       
-      for (const detection of results) {
-        let bestMatch: string | null = null;
-        let bestIoU = 0.3; // Minimum IoU threshold for matching
+      // For each tracked face, find best matching new detection
+      for (const [id, trackedFace] of tracked.entries()) {
+        let bestMatch: number | null = null;
+        let bestScore = 0;
         
-        for (const [id, trackedFace] of tracked.entries()) {
+        for (let i = 0; i < results.length; i++) {
+          if (usedDetections.has(i)) continue;
+          
+          const detection = results[i];
           const iou = calculateIoU(detection.boundingBox, trackedFace.boundingBox);
-          if (iou > bestIoU) {
-            bestIoU = iou;
-            bestMatch = id;
+          const distance = calculateCenterDistance(detection.boundingBox, trackedFace.boundingBox);
+          
+          // Predict position based on velocity
+          const predictedX = trackedFace.boundingBox.x + trackedFace.velocity.vx;
+          const predictedY = trackedFace.boundingBox.y + trackedFace.velocity.vy;
+          const predictedBox = { ...trackedFace.boundingBox, x: predictedX, y: predictedY };
+          const predictedDistance = calculateCenterDistance(detection.boundingBox, predictedBox);
+          
+          // Use minimum of actual and predicted distance
+          const effectiveDistance = Math.min(distance, predictedDistance);
+          
+          // Reject if moved too far (likely different person)
+          if (effectiveDistance > config.maxVelocityPx) continue;
+          
+          // Score: IoU weighted higher + inverse distance bonus
+          const score = iou * 0.6 + Math.max(0, 1 - effectiveDistance / 200) * 0.4;
+          
+          if (score > bestScore && (iou > 0.2 || effectiveDistance < 80)) {
+            bestScore = score;
+            bestMatch = i;
           }
         }
         
-        if (bestMatch) {
-          // Update existing tracked face
-          tracked.set(bestMatch, { ...detection, missedFrames: 0, trackingId: bestMatch });
-          matchedIds.add(bestMatch);
-        } else {
-          // New face - add to tracking
-          const newId = `face_${now}_${Math.random().toString(36).substr(2, 5)}`;
-          tracked.set(newId, { ...detection, missedFrames: 0, trackingId: newId });
-          matchedIds.add(newId);
+        if (bestMatch !== null) {
+          const detection = results[bestMatch];
+          usedDetections.add(bestMatch);
+          matchedIds.add(id);
+          
+          // Update tracked face with smoothing
+          const alpha = 0.7; // Smoothing factor
+          const newVx = (detection.boundingBox!.x - trackedFace.boundingBox.x);
+          const newVy = (detection.boundingBox!.y - trackedFace.boundingBox.y);
+          
+          tracked.set(id, {
+            ...trackedFace,
+            boundingBox: {
+              x: trackedFace.boundingBox.x * (1 - alpha) + detection.boundingBox!.x * alpha,
+              y: trackedFace.boundingBox.y * (1 - alpha) + detection.boundingBox!.y * alpha,
+              width: trackedFace.boundingBox.width * (1 - alpha) + detection.boundingBox!.width * alpha,
+              height: trackedFace.boundingBox.height * (1 - alpha) + detection.boundingBox!.height * alpha,
+            },
+            velocity: {
+              vx: trackedFace.velocity.vx * 0.5 + newVx * 0.5,
+              vy: trackedFace.velocity.vy * 0.5 + newVy * 0.5,
+            },
+            confidence: detection.confidence,
+            faceScore: detection.faceScore,
+            gender: detection.gender,
+            ageGroup: detection.ageGroup,
+            consecutiveHits: trackedFace.consecutiveHits + 1,
+            missedFrames: 0,
+            lastSeenAt: currentTime,
+            detectorUsed: detection.trackingId?.startsWith('ssd') ? 'ssd' : 'tiny',
+          });
         }
       }
       
-      // Increment missed frames for unmatched tracked faces
+      // Add new unmatched detections
+      for (let i = 0; i < results.length; i++) {
+        if (usedDetections.has(i)) continue;
+        
+        const detection = results[i];
+        const newId = `face_${currentTime}_${Math.random().toString(36).substr(2, 5)}`;
+        
+        tracked.set(newId, {
+          id: newId,
+          boundingBox: detection.boundingBox!,
+          velocity: { vx: 0, vy: 0 },
+          confidence: detection.confidence,
+          faceScore: detection.faceScore,
+          gender: detection.gender,
+          ageGroup: detection.ageGroup,
+          consecutiveHits: 1,
+          missedFrames: 0,
+          firstSeenAt: currentTime,
+          lastSeenAt: currentTime,
+          detectorUsed: detection.trackingId?.startsWith('ssd') ? 'ssd' : 'tiny',
+        });
+      }
+      
+      // Update missed frames and remove stale faces
       for (const [id, trackedFace] of tracked.entries()) {
-        if (!matchedIds.has(id)) {
+        if (!matchedIds.has(id) && !results.some((_, i) => !usedDetections.has(i))) {
           trackedFace.missedFrames++;
+          
+          // Apply velocity prediction for smooth tracking during occlusion
+          if (trackedFace.missedFrames <= config.holdFrames / 2) {
+            trackedFace.boundingBox.x += trackedFace.velocity.vx * 0.5;
+            trackedFace.boundingBox.y += trackedFace.velocity.vy * 0.5;
+          }
+          
           // Remove if missed too many frames
-          if (trackedFace.missedFrames > HOLD_FRAMES) {
+          if (trackedFace.missedFrames > config.holdFrames) {
             tracked.delete(id);
           }
         }
       }
       
-      // Get current stable detections
-      const stableViewers = Array.from(tracked.values());
+      // Get stable detections (consecutive hits >= threshold)
+      const stableViewers = Array.from(tracked.values())
+        .filter(face => face.consecutiveHits >= config.minConsecutiveFrames)
+        .map(toDetectionResult);
       
       // ALWAYS update viewers (fixes stuck bounding box)
       setCurrentViewers(stableViewers);
@@ -249,8 +365,8 @@ const SmartAdsSystem = () => {
         setDemographics(zeroDemographics);
         lastDemographicsRef.current = zeroDemographics;
       }
-    }, 1000); // Slightly faster interval for smoother tracking
-  }, [detectFaces, addLog, videoRef, calculateIoU]);
+    }, 800); // Faster interval for CCTV tracking
+  }, [detectFaces, addLog, videoRef, calculateIoU, calculateCenterDistance, trackingConfig]);
 
   const stopDetectionLoop = useCallback(() => {
     if (captureIntervalRef.current) {
@@ -269,6 +385,12 @@ const SmartAdsSystem = () => {
     setTestMode(true);
     addLog('info', `🧪 TEST MODE: Starting ${sourceName} detection (continuous)...`);
     
+    // Auto-enable CCTV mode for video files
+    if (sourceName.includes('Video')) {
+      setCctvMode(true);
+      addLog('info', '📹 CCTV Mode auto-enabled for video file');
+    }
+    
     // Reset demographics
     setDemographics({ male: 0, female: 0, kid: 0, young: 0, adult: 0 });
     setCurrentViewers([]);
@@ -282,8 +404,6 @@ const SmartAdsSystem = () => {
       setTimeout(() => {
         startDetectionLoop();
       }, 500);
-      
-      // No auto-stop - runs continuously until user stops it
     } else {
       addLog('webcam', `❌ ${sourceName} failed to start`);
       setTestMode(false);
@@ -319,6 +439,7 @@ const SmartAdsSystem = () => {
     isCapturingRef.current = false;
     setIsCapturing(false);
     setTestMode(false);
+    setCurrentViewers([]);
     addLog('info', '🧪 TEST MODE: Ended');
   }, [stopDetectionLoop, stopWebcam, addLog]);
 
@@ -368,7 +489,7 @@ const SmartAdsSystem = () => {
       // Reset for new capture session
       setDemographics({ male: 0, female: 0, kid: 0, young: 0, adult: 0 });
       setCurrentViewers([]);
-      resetSimulatedPerson(); // Reset simulated person for fresh detection
+      resetSimulatedPerson();
       
       addLog('webcam', `📷 CAPTURE STARTED (${currentAd.captureStart}s - ${currentAd.captureEnd}s)`);
       addLog('info', '🔄 Scanning for current viewers...');
@@ -469,6 +590,11 @@ const SmartAdsSystem = () => {
     end: currentAd.captureEnd,
   } : null;
 
+  // Get tracked faces for debug overlay
+  const trackedFacesArray = useMemo(() => {
+    return Array.from(trackedFacesRef.current.values());
+  }, [currentViewers]); // Update when viewers change
+
   // Fullscreen mode - renders only the video player
   if (isFullscreen) {
     return (
@@ -511,7 +637,7 @@ const SmartAdsSystem = () => {
           <h1 className="text-2xl lg:text-3xl font-display font-bold tracking-tight">
             Smart<span className="text-primary">Ads</span> System
           </h1>
-          <div className="ml-auto flex items-center gap-3">
+          <div className="ml-auto flex items-center gap-3 flex-wrap">
             {/* Test Mode Toggle */}
             <div className="flex items-center gap-2">
               <Button
@@ -534,6 +660,33 @@ const SmartAdsSystem = () => {
                 )}
               </Button>
             </div>
+
+            {/* CCTV Mode Toggle */}
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/50 border border-border">
+              <Cpu className={`h-4 w-4 ${cctvMode ? 'text-accent' : 'text-muted-foreground'}`} />
+              <Label htmlFor="cctv-mode" className="text-sm font-medium cursor-pointer">
+                CCTV
+              </Label>
+              <Switch
+                id="cctv-mode"
+                checked={cctvMode}
+                onCheckedChange={setCctvMode}
+              />
+            </div>
+
+            {/* Debug Mode Toggle */}
+            {cctvMode && (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/50 border border-border">
+                <Label htmlFor="debug-mode" className="text-sm font-medium cursor-pointer text-muted-foreground">
+                  Debug
+                </Label>
+                <Switch
+                  id="debug-mode"
+                  checked={debugMode}
+                  onCheckedChange={setDebugMode}
+                />
+              </div>
+            )}
 
             {/* Manual Mode Toggle */}
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/50 border border-border">
@@ -581,7 +734,7 @@ const SmartAdsSystem = () => {
               {modelsLoading ? (
                 <>
                   <Activity className="h-4 w-4 text-primary animate-spin" />
-                  <span className="text-muted-foreground">Loading AI...</span>
+                  <span className="text-muted-foreground">Loading AI ({loadingProgress}%)...</span>
                 </>
               ) : modelError ? (
                 <>
@@ -591,7 +744,9 @@ const SmartAdsSystem = () => {
               ) : isModelLoaded ? (
                 <>
                   <CheckCircle className="h-4 w-4 text-success" />
-                  <span className="text-success">AI Ready</span>
+                  <span className="text-success">
+                    AI Ready {ssdLoaded ? '(Dual)' : '(Tiny)'} • {backend?.toUpperCase()}
+                  </span>
                 </>
               ) : (
                 <>
@@ -609,6 +764,7 @@ const SmartAdsSystem = () => {
             <>Dynamic ad targeting powered by real-time demographic detection • Camera activates at {captureSettings.startPercent}% of ad duration</>
           )}
           {testMode && <span className="ml-2 text-primary font-medium">• TEST MODE ACTIVE</span>}
+          {cctvMode && <span className="ml-2 text-accent font-medium">• CCTV MODE</span>}
         </p>
       </header>
 
@@ -641,6 +797,9 @@ const SmartAdsSystem = () => {
               detections={currentViewers}
               inputMode={inputMode}
               videoFileName={videoFileName}
+              debugMode={debugMode}
+              debugInfo={getDebugInfo()}
+              trackedFaces={trackedFacesArray}
             />
           </div>
           <SystemLogs logs={logs} />
@@ -675,15 +834,17 @@ const SmartAdsSystem = () => {
           <div className="flex items-center gap-4">
             <span className="flex items-center gap-1.5">
               <Zap className="h-3 w-3 text-primary" />
-              face-api.js (TinyFaceDetector + AgeGender)
+              face-api.js ({ssdLoaded ? 'TinyFace + SSD Mobilenet' : 'TinyFaceDetector'} + AgeGender)
             </span>
+            <span>•</span>
+            <span>Backend: {backend || 'Loading...'}</span>
             <span>•</span>
             <span>Camera: {captureSettings.startPercent}% - {captureSettings.endPercent}% of ad</span>
             <span>•</span>
             <span>{customAds.length} ads loaded</span>
           </div>
           <div className="flex gap-4">
-            <span>Prototype v1.0</span>
+            <span>Prototype v2.0 (CCTV Enhanced)</span>
           </div>
         </div>
       </footer>
