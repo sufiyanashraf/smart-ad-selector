@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { AdMetadata } from '@/types/ad';
-import { Play, Pause, SkipForward, Volume2, VolumeX, Camera, CameraOff } from 'lucide-react';
+import { Play, Pause, SkipForward, Volume2, VolumeX, Camera, CameraOff, Maximize, Minimize } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -15,6 +15,8 @@ interface VideoPlayerProps {
   isCapturing: boolean;
   captureWindow: { start: number; end: number } | null;
   onDurationDetected?: (durationSeconds: number) => void;
+  isFullscreen?: boolean;
+  onFullscreenToggle?: () => void;
 }
 
 export const VideoPlayer = ({
@@ -28,6 +30,8 @@ export const VideoPlayer = ({
   isCapturing,
   captureWindow,
   onDurationDetected,
+  isFullscreen = false,
+  onFullscreenToggle,
 }: VideoPlayerProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
@@ -189,34 +193,53 @@ export const VideoPlayer = ({
           </div>
 
           <div className="flex items-center gap-3">
-            <div className={cn(
-              "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-colors",
-              isCapturing 
-                ? "bg-primary/20 text-primary" 
-                : "bg-muted text-muted-foreground"
-            )}>
-              {isCapturing ? (
-                <Camera className="h-4 w-4" />
-              ) : (
-                <CameraOff className="h-4 w-4" />
-              )}
-              <span className="font-display">
-                {isCapturing ? 'Detecting' : 'Standby'}
-              </span>
-            </div>
+            {!isFullscreen && (
+              <div className={cn(
+                "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-colors",
+                isCapturing 
+                  ? "bg-primary/20 text-primary" 
+                  : "bg-muted text-muted-foreground"
+              )}>
+                {isCapturing ? (
+                  <Camera className="h-4 w-4" />
+                ) : (
+                  <CameraOff className="h-4 w-4" />
+                )}
+                <span className="font-display">
+                  {isCapturing ? 'Detecting' : 'Standby'}
+                </span>
+              </div>
+            )}
+            
+            {onFullscreenToggle && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-10 w-10 rounded-full hover:bg-foreground/10"
+                onClick={onFullscreenToggle}
+              >
+                {isFullscreen ? (
+                  <Minimize className="h-5 w-5" />
+                ) : (
+                  <Maximize className="h-5 w-5" />
+                )}
+              </Button>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Ad info overlay */}
-      <div className="absolute top-4 left-4 bg-background/80 backdrop-blur-sm px-3 py-1.5 rounded-lg">
-        <p className="text-sm font-display font-semibold text-foreground">
-          {ad.title}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          Target: {ad.gender === 'all' ? 'Everyone' : ad.gender} • {ad.ageGroup === 'all' ? 'All ages' : ad.ageGroup}
-        </p>
-      </div>
+      {/* Ad info overlay - hidden in fullscreen */}
+      {!isFullscreen && (
+        <div className="absolute top-4 left-4 bg-background/80 backdrop-blur-sm px-3 py-1.5 rounded-lg">
+          <p className="text-sm font-display font-semibold text-foreground">
+            {ad.title}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Target: {ad.gender === 'all' ? 'Everyone' : ad.gender} • {ad.ageGroup === 'all' ? 'All ages' : ad.ageGroup}
+          </p>
+        </div>
+      )}
     </div>
   );
 };
