@@ -9,11 +9,12 @@ import { WebcamPreview } from '@/components/WebcamPreview';
 import { SettingsPanel, CaptureSettings } from '@/components/SettingsPanel';
 import { AdManager } from '@/components/AdManager';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { InputSourceSelector } from '@/components/InputSourceSelector';
 import { useWebcam } from '@/hooks/useWebcam';
 import { useFaceDetection, resetSimulatedPerson } from '@/hooks/useFaceDetection';
 import { useAdQueue } from '@/hooks/useAdQueue';
 import { sampleAds } from '@/data/sampleAds';
-import { Tv, Zap, Activity, Play, Square, AlertCircle, CheckCircle, Eye, EyeOff } from 'lucide-react';
+import { Tv, Zap, Activity, AlertCircle, CheckCircle, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
@@ -90,7 +91,18 @@ const SmartAdsSystem = () => {
   const lastDemographicsRef = useRef<DemographicCounts>({ male: 0, female: 0, kid: 0, young: 0, adult: 0 });
   const testModeTimeoutRef = useRef<number | null>(null);
 
-  const { videoRef, isActive: webcamActive, hasPermission, error: webcamError, startWebcam, stopWebcam } = useWebcam();
+  const { 
+    videoRef, 
+    isActive: webcamActive, 
+    hasPermission, 
+    error: webcamError, 
+    inputMode,
+    videoFileName,
+    startWebcam, 
+    startVideoFile,
+    startScreenCapture,
+    stopWebcam 
+  } = useWebcam();
   const { isModelLoaded, isLoading: modelsLoading, error: modelError, detectFaces } = useFaceDetection();
   const { queue, logs, getNextAd, reorderQueue, addLog, updateQueue, resetManualQueueIndex } = useAdQueue({
     customAds: adsWithCaptureWindows,
@@ -170,20 +182,23 @@ const SmartAdsSystem = () => {
     }
   }, []);
 
-  // Test mode: manually trigger detection for 30 seconds
-  const startTestMode = useCallback(async () => {
+  // Start detection with current input source
+  const startDetectionWithSource = useCallback(async (
+    sourceStarter: () => Promise<boolean>,
+    sourceName: string
+  ) => {
     if (testMode) return;
     
     setTestMode(true);
-    addLog('info', '🧪 TEST MODE: Starting immediate detection (30s)...');
+    addLog('info', `🧪 TEST MODE: Starting ${sourceName} detection (30s)...`);
     
     // Reset demographics
     setDemographics({ male: 0, female: 0, kid: 0, young: 0, adult: 0 });
     setCurrentViewers([]);
     
-    const success = await startWebcam();
+    const success = await sourceStarter();
     if (success) {
-      addLog('webcam', '✅ Camera activated for test');
+      addLog('webcam', `✅ ${sourceName} activated for test`);
       isCapturingRef.current = true;
       setIsCapturing(true);
       
@@ -196,10 +211,28 @@ const SmartAdsSystem = () => {
         stopTestMode();
       }, 30000);
     } else {
-      addLog('webcam', '❌ Camera failed to start');
+      addLog('webcam', `❌ ${sourceName} failed to start`);
       setTestMode(false);
     }
-  }, [testMode, startWebcam, startDetectionLoop, addLog]);
+  }, [testMode, startDetectionLoop, addLog]);
+
+  // Test mode: manually trigger detection for 30 seconds
+  const startTestMode = useCallback(async () => {
+    await startDetectionWithSource(startWebcam, 'Camera');
+  }, [startDetectionWithSource, startWebcam]);
+
+  // Handle video file selection
+  const handleVideoFileSelect = useCallback(async (file: File) => {
+    await startDetectionWithSource(
+      () => startVideoFile(file),
+      `Video (${file.name})`
+    );
+  }, [startDetectionWithSource, startVideoFile]);
+
+  // Handle screen capture selection  
+  const handleScreenCaptureSelect = useCallback(async () => {
+    await startDetectionWithSource(startScreenCapture, 'Screen Capture');
+  }, [startDetectionWithSource, startScreenCapture]);
 
   const stopTestMode = useCallback(() => {
     if (testModeTimeoutRef.current) {
@@ -422,26 +455,17 @@ const SmartAdsSystem = () => {
               />
             </div>
 
-            {/* Test Detection Button */}
-            <Button
-              variant={testMode ? "destructive" : "outline"}
-              size="sm"
-              onClick={testMode ? stopTestMode : startTestMode}
+            {/* Input Source Selector */}
+            <InputSourceSelector
+              currentMode={inputMode}
+              isActive={webcamActive}
+              videoFileName={videoFileName}
+              onSelectWebcam={startTestMode}
+              onSelectVideoFile={handleVideoFileSelect}
+              onSelectScreenCapture={handleScreenCaptureSelect}
+              onStop={stopTestMode}
               disabled={modelsLoading || manualMode}
-              className="flex items-center gap-2"
-            >
-              {testMode ? (
-                <>
-                  <Square className="h-4 w-4" />
-                  Stop Test
-                </>
-              ) : (
-                <>
-                  <Play className="h-4 w-4" />
-                  Test Detection
-                </>
-              )}
-            </Button>
+            />
             
             <AdManager 
               ads={customAds}
@@ -518,6 +542,8 @@ const SmartAdsSystem = () => {
               error={webcamError}
               isCapturing={isCapturing}
               detections={currentViewers}
+              inputMode={inputMode}
+              videoFileName={videoFileName}
             />
             <SystemLogs logs={logs} />
           </div>
