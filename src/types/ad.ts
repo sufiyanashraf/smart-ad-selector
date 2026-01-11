@@ -29,8 +29,11 @@ export interface FaceBoundingBox {
 export interface DetectionResult {
   gender: 'male' | 'female';
   ageGroup: 'kid' | 'young' | 'adult';
-  confidence: number;
+  confidence: number;          // Gender classification confidence
+  faceScore: number;           // Face detection confidence (0-1)
   boundingBox?: FaceBoundingBox;
+  trackingId?: string;         // For temporal tracking
+  lastSeen?: number;           // Timestamp for tracking
 }
 
 export interface AdScore {

@@ -91,6 +91,10 @@ const SmartAdsSystem = () => {
   const initializedRef = useRef(false);
   const lastDemographicsRef = useRef<DemographicCounts>({ male: 0, female: 0, kid: 0, young: 0, adult: 0 });
   const testModeTimeoutRef = useRef<number | null>(null);
+  
+  // Temporal tracking cache for smoothing detections
+  const trackedFacesRef = useRef<Map<string, DetectionResult & { missedFrames: number }>>(new Map());
+  const HOLD_FRAMES = 2; // How many missed frames before dropping a face
 
   const { 
     videoRef, 
@@ -147,11 +151,31 @@ const SmartAdsSystem = () => {
     addLog('info', `📁 Ad library updated: ${newAds.length} ads`);
   }, [addLog]);
 
+  // Helper: Calculate IoU (Intersection over Union) for face matching
+  const calculateIoU = useCallback((box1: DetectionResult['boundingBox'], box2: DetectionResult['boundingBox']): number => {
+    if (!box1 || !box2) return 0;
+    
+    const x1 = Math.max(box1.x, box2.x);
+    const y1 = Math.max(box1.y, box2.y);
+    const x2 = Math.min(box1.x + box1.width, box2.x + box2.width);
+    const y2 = Math.min(box1.y + box1.height, box2.y + box2.height);
+    
+    const intersection = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+    const area1 = box1.width * box1.height;
+    const area2 = box2.width * box2.height;
+    const union = area1 + area2 - intersection;
+    
+    return union > 0 ? intersection / union : 0;
+  }, []);
+
   // Start detection loop - detects current viewers in frame
   const startDetectionLoop = useCallback(() => {
     if (captureIntervalRef.current) {
       window.clearInterval(captureIntervalRef.current);
     }
+
+    // Clear tracking cache on new detection session
+    trackedFacesRef.current.clear();
 
     captureIntervalRef.current = window.setInterval(async () => {
       if (!isCapturingRef.current || !videoRef.current) return;
@@ -159,25 +183,74 @@ const SmartAdsSystem = () => {
       console.log('[Loop] Running detection...');
       const results = await detectFaces(videoRef.current);
       
-      if (results.length > 0) {
-        // Update current viewers with LATEST detection (not accumulating)
-        setCurrentViewers(results);
+      const tracked = trackedFacesRef.current;
+      const now = Date.now();
+      
+      // Match new detections to tracked faces using IoU
+      const matchedIds = new Set<string>();
+      
+      for (const detection of results) {
+        let bestMatch: string | null = null;
+        let bestIoU = 0.3; // Minimum IoU threshold for matching
         
-        // Calculate demographics from current detection
+        for (const [id, trackedFace] of tracked.entries()) {
+          const iou = calculateIoU(detection.boundingBox, trackedFace.boundingBox);
+          if (iou > bestIoU) {
+            bestIoU = iou;
+            bestMatch = id;
+          }
+        }
+        
+        if (bestMatch) {
+          // Update existing tracked face
+          tracked.set(bestMatch, { ...detection, missedFrames: 0, trackingId: bestMatch });
+          matchedIds.add(bestMatch);
+        } else {
+          // New face - add to tracking
+          const newId = `face_${now}_${Math.random().toString(36).substr(2, 5)}`;
+          tracked.set(newId, { ...detection, missedFrames: 0, trackingId: newId });
+          matchedIds.add(newId);
+        }
+      }
+      
+      // Increment missed frames for unmatched tracked faces
+      for (const [id, trackedFace] of tracked.entries()) {
+        if (!matchedIds.has(id)) {
+          trackedFace.missedFrames++;
+          // Remove if missed too many frames
+          if (trackedFace.missedFrames > HOLD_FRAMES) {
+            tracked.delete(id);
+          }
+        }
+      }
+      
+      // Get current stable detections
+      const stableViewers = Array.from(tracked.values());
+      
+      // ALWAYS update viewers (fixes stuck bounding box)
+      setCurrentViewers(stableViewers);
+      
+      if (stableViewers.length > 0) {
+        // Calculate demographics from stable detections
         const newDemographics: DemographicCounts = {
-          male: results.filter(d => d.gender === 'male').length,
-          female: results.filter(d => d.gender === 'female').length,
-          kid: results.filter(d => d.ageGroup === 'kid').length,
-          young: results.filter(d => d.ageGroup === 'young').length,
-          adult: results.filter(d => d.ageGroup === 'adult').length,
+          male: stableViewers.filter(d => d.gender === 'male').length,
+          female: stableViewers.filter(d => d.gender === 'female').length,
+          kid: stableViewers.filter(d => d.ageGroup === 'kid').length,
+          young: stableViewers.filter(d => d.ageGroup === 'young').length,
+          adult: stableViewers.filter(d => d.ageGroup === 'adult').length,
         };
         setDemographics(newDemographics);
         lastDemographicsRef.current = newDemographics;
         
-        addLog('detection', `👁️ ${results.length} viewer(s): ${results.map(r => `${r.gender}/${r.ageGroup} (${(r.confidence * 100).toFixed(0)}%)`).join(', ')}`);
+        addLog('detection', `👁️ ${stableViewers.length} viewer(s): ${stableViewers.map(r => `${r.gender}/${r.ageGroup} (${Math.round(r.faceScore * 100)}%)`).join(', ')}`);
+      } else {
+        // Clear demographics when no viewers
+        const zeroDemographics: DemographicCounts = { male: 0, female: 0, kid: 0, young: 0, adult: 0 };
+        setDemographics(zeroDemographics);
+        lastDemographicsRef.current = zeroDemographics;
       }
-    }, 1500);
-  }, [detectFaces, addLog, videoRef]);
+    }, 1000); // Slightly faster interval for smoother tracking
+  }, [detectFaces, addLog, videoRef, calculateIoU]);
 
   const stopDetectionLoop = useCallback(() => {
     if (captureIntervalRef.current) {

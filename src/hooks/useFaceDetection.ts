@@ -12,12 +12,39 @@ type FaceDetectionOptions = {
   sourceMode?: SourceMode;
 };
 
+// Configuration constants for tuning
+const CONFIG = {
+  // Webcam settings (faces are usually larger and clearer)
+  webcam: {
+    inputSize: 512,
+    upscale: 1,
+    minFaceScore: 0.5,
+    minFaceSizePx: 40,
+  },
+  // Video/CCTV settings (faces can be small and blurry)
+  video: {
+    inputSize: 416,        // Fast first pass
+    rescueInputSize: 608,  // Second pass if no faces found
+    upscale: 1.5,          // Moderate upscale for rescue pass
+    minFaceScore: 0.35,    // Allow weaker detections
+    minFaceSizePx: 24,     // Allow smaller faces
+  },
+  // Screen capture - similar to webcam
+  screen: {
+    inputSize: 512,
+    upscale: 1,
+    minFaceScore: 0.45,
+    minFaceSizePx: 35,
+  },
+};
+
 export const useFaceDetection = (sensitivity: number = 0.4, options?: FaceDetectionOptions) => {
   const [isModelLoaded, setIsModelLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const loadingRef = useRef(false);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const inFlightRef = useRef(false); // Prevent detection backlog
 
   useEffect(() => {
     const loadModels = async () => {
@@ -55,82 +82,88 @@ export const useFaceDetection = (sensitivity: number = 0.4, options?: FaceDetect
     loadModels();
   }, []);
 
-  const detectFaces = useCallback(async (
-    videoElement: HTMLVideoElement
-  ): Promise<DetectionResult[]> => {
-    if (!videoElement) {
-      console.log('[Detection] No video element');
-      return [];
-    }
+  // Helper: run detection on a given input with specified options
+  const runDetection = useCallback(async (
+    input: HTMLVideoElement | HTMLCanvasElement,
+    inputSize: number,
+    scoreThreshold: number
+  ) => {
+    return faceapi
+      .detectAllFaces(
+        input,
+        new faceapi.TinyFaceDetectorOptions({
+          inputSize,
+          scoreThreshold,
+        })
+      )
+      .withAgeAndGender();
+  }, []);
 
-    if (videoElement.readyState < 2) {
-      console.log('[Detection] Video not ready, readyState:', videoElement.readyState);
-      return [];
-    }
+  // Helper: create upscaled canvas from video
+  const createUpscaledCanvas = useCallback((
+    videoElement: HTMLVideoElement,
+    videoWidth: number,
+    videoHeight: number,
+    scale: number
+  ): HTMLCanvasElement | null => {
+    const canvas = offscreenCanvasRef.current ?? document.createElement('canvas');
+    offscreenCanvasRef.current = canvas;
 
-    if (!isModelLoaded) {
-      console.log('[Detection] Models not loaded yet');
-      return [];
-    }
+    canvas.width = Math.round(videoWidth * scale);
+    canvas.height = Math.round(videoHeight * scale);
 
-    try {
-      const sourceMode: SourceMode = options?.sourceMode ?? 'webcam';
-      const videoWidth = videoElement.videoWidth || 640;
-      const videoHeight = videoElement.videoHeight || 480;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
 
-      // CCTV/video files often have smaller/blurrier faces. Upscale the frame before running TinyFaceDetector.
-      const useUpscaledFrame = sourceMode === 'video';
-      const upscale = useUpscaledFrame ? 1.75 : 1;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  }, []);
 
-      const detectionInput: HTMLVideoElement | HTMLCanvasElement = (() => {
-        if (!useUpscaledFrame) return videoElement;
-
-        const canvas = offscreenCanvasRef.current ?? document.createElement('canvas');
-        offscreenCanvasRef.current = canvas;
-
-        canvas.width = Math.round(videoWidth * upscale);
-        canvas.height = Math.round(videoHeight * upscale);
-
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return videoElement;
-
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-        return canvas;
-      })();
-
-      // Slightly larger detector input for CCTV; keep threshold user-controlled via slider.
-      const inputSize = sourceMode === 'video' ? 640 : 512;
-
-      console.log('[Detection] Running face-api', {
-        sourceMode,
-        sensitivity,
-        inputSize,
-        upscale: useUpscaledFrame ? upscale : 1,
-      });
-
-      const detections = await faceapi
-        .detectAllFaces(
-          detectionInput,
-          new faceapi.TinyFaceDetectorOptions({
-            inputSize,
-            scoreThreshold: sensitivity,
-          })
-        )
-        .withAgeAndGender();
-
-      console.log('[Detection] Found', detections.length, 'faces');
-
-      if (detections.length === 0) {
-        return [];
-      }
-
-      return detections.map((detection) => {
-        const box = detection.detection.box;
-
-        // If we detected on an upscaled canvas, convert boxes back to original video coordinates.
-        const scaleBack = useUpscaledFrame ? upscale : 1;
+  // Helper: filter and process detections
+  const processDetections = useCallback((
+    detections: Awaited<ReturnType<typeof faceapi.FaceDetection.prototype.forSize>>[],
+    videoWidth: number,
+    videoHeight: number,
+    scaleBack: number,
+    minFaceScore: number,
+    minFaceSizePx: number
+  ): DetectionResult[] => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (detections as any[])
+      .filter(detection => {
+        const det = detection.detection ?? detection;
+        const box = det.box;
+        const faceScore = det.score;
+        const faceWidth = box.width / scaleBack;
+        const faceHeight = box.height / scaleBack;
+        
+        // Filter by face detection score
+        if (faceScore < minFaceScore) {
+          console.log('[Detection] Filtered: low faceScore', faceScore.toFixed(2));
+          return false;
+        }
+        
+        // Filter by minimum size
+        if (faceWidth < minFaceSizePx || faceHeight < minFaceSizePx) {
+          console.log('[Detection] Filtered: too small', faceWidth.toFixed(0), 'x', faceHeight.toFixed(0));
+          return false;
+        }
+        
+        // Filter by aspect ratio (faces shouldn't be too elongated)
+        const aspectRatio = faceWidth / faceHeight;
+        if (aspectRatio < 0.5 || aspectRatio > 2.0) {
+          console.log('[Detection] Filtered: bad aspect ratio', aspectRatio.toFixed(2));
+          return false;
+        }
+        
+        return true;
+      })
+      .map(detection => {
+        const det = detection.detection ?? detection;
+        const box = det.box;
+        const faceScore = det.score;
 
         const boundingBox: FaceBoundingBox = {
           x: Math.max(0, box.x / scaleBack),
@@ -154,14 +187,115 @@ export const useFaceDetection = (sensitivity: number = 0.4, options?: FaceDetect
           gender: detection.gender as 'male' | 'female',
           ageGroup,
           confidence: detection.genderProbability,
+          faceScore,
           boundingBox,
+          trackingId: `${Math.round(boundingBox.x)}_${Math.round(boundingBox.y)}`,
+          lastSeen: Date.now(),
         };
       });
+  }, []);
+
+  const detectFaces = useCallback(async (
+    videoElement: HTMLVideoElement
+  ): Promise<DetectionResult[]> => {
+    // Prevent overlapping detection calls
+    if (inFlightRef.current) {
+      console.log('[Detection] Skipping: previous detection still in flight');
+      return [];
+    }
+
+    if (!videoElement) {
+      console.log('[Detection] No video element');
+      return [];
+    }
+
+    if (videoElement.readyState < 2) {
+      console.log('[Detection] Video not ready, readyState:', videoElement.readyState);
+      return [];
+    }
+
+    if (!isModelLoaded) {
+      console.log('[Detection] Models not loaded yet');
+      return [];
+    }
+
+    inFlightRef.current = true;
+
+    try {
+      const sourceMode: SourceMode = options?.sourceMode ?? 'webcam';
+      const videoWidth = videoElement.videoWidth || 640;
+      const videoHeight = videoElement.videoHeight || 480;
+
+      const config = CONFIG[sourceMode] || CONFIG.webcam;
+      const scoreThreshold = sensitivity;
+
+      console.log('[Detection] Running face-api', {
+        sourceMode,
+        sensitivity,
+        inputSize: config.inputSize,
+        minFaceScore: config.minFaceScore,
+      });
+
+      // ========== PASS 1: Fast detection on original video ==========
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let detections: any[] = await runDetection(videoElement, config.inputSize, scoreThreshold);
+
+      console.log('[Detection] Pass 1 found', detections.length, 'raw faces');
+
+      // ========== PASS 2: CCTV rescue (only for video mode if no faces found) ==========
+      if (detections.length === 0 && sourceMode === 'video' && 'rescueInputSize' in config) {
+        console.log('[Detection] Pass 2: CCTV rescue with upscale...');
+        
+        const upscaledCanvas = createUpscaledCanvas(
+          videoElement,
+          videoWidth,
+          videoHeight,
+          config.upscale
+        );
+
+        if (upscaledCanvas) {
+          detections = await runDetection(
+            upscaledCanvas,
+            (config as typeof CONFIG.video).rescueInputSize,
+            Math.max(scoreThreshold - 0.05, 0.25) // Slightly lower threshold, but not below 0.25
+          );
+          
+          console.log('[Detection] Pass 2 found', detections.length, 'faces');
+          
+          // Process with upscale factor for coordinate correction
+          if (detections.length > 0) {
+            return processDetections(
+              detections,
+              videoWidth,
+              videoHeight,
+              config.upscale,
+              config.minFaceScore,
+              config.minFaceSizePx
+            );
+          }
+        }
+      }
+
+      if (detections.length === 0) {
+        return [];
+      }
+
+      // Process pass 1 results (no upscale)
+      return processDetections(
+        detections,
+        videoWidth,
+        videoHeight,
+        1,
+        config.minFaceScore,
+        'minFaceSizePx' in config ? config.minFaceSizePx : 40
+      );
     } catch (err) {
       console.error('[Detection] Error:', err);
       return [];
+    } finally {
+      inFlightRef.current = false;
     }
-  }, [isModelLoaded, sensitivity, options?.sourceMode]);
+  }, [isModelLoaded, sensitivity, options?.sourceMode, runDetection, createUpscaledCanvas, processDetections]);
 
   return { isModelLoaded, isLoading, error, detectFaces };
 };
@@ -170,4 +304,3 @@ export const useFaceDetection = (sensitivity: number = 0.4, options?: FaceDetect
 export const resetSimulatedPerson = () => {
   // no-op
 };
-
