@@ -69,22 +69,38 @@ export const useFaceDetection = () => {
     try {
       console.log('[Detection] Running face-api detection...');
       
-      // First pass: standard detection with moderate threshold
+      // Multi-pass detection strategy for maximum face detection
+      // Pass 1: High sensitivity with very low threshold
       let detections = await faceapi
         .detectAllFaces(videoElement, new faceapi.TinyFaceDetectorOptions({
-          inputSize: 512,  // Larger input for better accuracy
-          scoreThreshold: 0.2  // Lower threshold for covered faces
+          inputSize: 608,  // Large input for better accuracy
+          scoreThreshold: 0.1  // Very low threshold for difficult cases
         }))
         .withAgeAndGender();
 
-      // Second pass: if no faces found, try with even lower threshold
-      // This helps detect faces with hijab, mask, or partial occlusion
+      // Pass 2: If low/no faces, try with maximum input size
+      if (detections.length < 2) {
+        console.log('[Detection] Few faces found, trying maximum sensitivity...');
+        const moreDetections = await faceapi
+          .detectAllFaces(videoElement, new faceapi.TinyFaceDetectorOptions({
+            inputSize: 800,  // Maximum input size for tiny face detector
+            scoreThreshold: 0.05  // Extremely low threshold
+          }))
+          .withAgeAndGender();
+        
+        // Merge detections, avoiding duplicates (faces within 50px are considered same)
+        if (moreDetections.length > detections.length) {
+          detections = moreDetections;
+        }
+      }
+
+      // Pass 3: Try different input size for variety
       if (detections.length === 0) {
-        console.log('[Detection] No faces found, retrying with lower threshold...');
+        console.log('[Detection] No faces, final attempt with different config...');
         detections = await faceapi
           .detectAllFaces(videoElement, new faceapi.TinyFaceDetectorOptions({
-            inputSize: 608,  // Even larger input
-            scoreThreshold: 0.1  // Very low threshold for difficult cases
+            inputSize: 416,
+            scoreThreshold: 0.05
           }))
           .withAgeAndGender();
       }
