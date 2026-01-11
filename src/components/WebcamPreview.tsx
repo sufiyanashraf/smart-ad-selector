@@ -1,8 +1,9 @@
-import { RefObject, useRef, useEffect } from 'react';
-import { Camera, CameraOff, AlertCircle, Monitor, FileVideo } from 'lucide-react';
+import { RefObject, useRef, useEffect, useState, useMemo } from 'react';
+import { Camera, CameraOff, AlertCircle, Monitor, FileVideo, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DetectionResult } from '@/types/ad';
 import { InputSourceMode } from '@/hooks/useWebcam';
+import { Button } from '@/components/ui/button';
 
 interface WebcamPreviewProps {
   videoRef: RefObject<HTMLVideoElement>;
@@ -26,6 +27,56 @@ export const WebcamPreview = ({
   videoFileName,
 }: WebcamPreviewProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [zoomMode, setZoomMode] = useState<'none' | 'auto' | 'manual'>('none');
+  const [manualZoom, setManualZoom] = useState(1);
+
+  // Calculate zoom transform to focus on detected faces
+  const zoomTransform = useMemo(() => {
+    if (zoomMode === 'none' || detections.length === 0) {
+      return { transform: 'none', origin: 'center center' };
+    }
+
+    const video = videoRef.current;
+    if (!video) return { transform: 'none', origin: 'center center' };
+
+    const videoWidth = video.videoWidth || 640;
+    const videoHeight = video.videoHeight || 480;
+
+    // Find bounding box that encompasses all faces
+    let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0;
+    detections.forEach(d => {
+      if (d.boundingBox) {
+        minX = Math.min(minX, d.boundingBox.x);
+        minY = Math.min(minY, d.boundingBox.y);
+        maxX = Math.max(maxX, d.boundingBox.x + d.boundingBox.width);
+        maxY = Math.max(maxY, d.boundingBox.y + d.boundingBox.height);
+      }
+    });
+
+    if (minX === Infinity) return { transform: 'none', origin: 'center center' };
+
+    // Add padding around faces (20%)
+    const padding = 0.2;
+    const faceWidth = maxX - minX;
+    const faceHeight = maxY - minY;
+    minX = Math.max(0, minX - faceWidth * padding);
+    minY = Math.max(0, minY - faceHeight * padding);
+    maxX = Math.min(videoWidth, maxX + faceWidth * padding);
+    maxY = Math.min(videoHeight, maxY + faceHeight * padding);
+
+    // Calculate center and zoom level
+    const centerX = ((minX + maxX) / 2) / videoWidth * 100;
+    const centerY = ((minY + maxY) / 2) / videoHeight * 100;
+
+    let zoom = zoomMode === 'auto' 
+      ? Math.min(3, Math.max(1.5, videoWidth / (maxX - minX)))
+      : manualZoom;
+
+    return {
+      transform: `scale(${zoom})`,
+      origin: `${centerX}% ${centerY}%`
+    };
+  }, [detections, zoomMode, manualZoom, videoRef]);
 
   const getSourceIcon = () => {
     if (!isActive) return <CameraOff className="h-4 w-4 text-muted-foreground" />;
@@ -160,42 +211,112 @@ export const WebcamPreview = ({
           )}
         </h3>
         
-        <div className={cn(
-          "flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium",
-          isCapturing 
-            ? "bg-destructive/20 text-destructive"
-            : isActive 
-              ? "bg-success/20 text-success"
-              : "bg-muted text-muted-foreground"
-        )}>
+        <div className="flex items-center gap-2">
+          {/* Zoom Controls */}
+          {isActive && (
+            <div className="flex items-center gap-1">
+              <Button
+                variant={zoomMode === 'none' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() => setZoomMode('none')}
+                title="No zoom"
+              >
+                <Maximize2 className="h-3 w-3" />
+              </Button>
+              <Button
+                variant={zoomMode === 'auto' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() => setZoomMode('auto')}
+                title="Auto-zoom to faces"
+              >
+                <ZoomIn className="h-3 w-3" />
+                <span className="ml-1">Auto</span>
+              </Button>
+              {zoomMode === 'none' && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => {
+                    setZoomMode('manual');
+                    setManualZoom(2);
+                  }}
+                  title="Manual zoom"
+                >
+                  2x
+                </Button>
+              )}
+              {zoomMode === 'manual' && (
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0"
+                    onClick={() => setManualZoom(m => Math.max(1, m - 0.5))}
+                  >
+                    <ZoomOut className="h-3 w-3" />
+                  </Button>
+                  <span className="text-xs w-8 text-center">{manualZoom.toFixed(1)}x</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0"
+                    onClick={() => setManualZoom(m => Math.min(4, m + 0.5))}
+                  >
+                    <ZoomIn className="h-3 w-3" />
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className={cn(
-            "w-1.5 h-1.5 rounded-full",
+            "flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium",
             isCapturing 
-              ? "bg-destructive animate-pulse"
+              ? "bg-destructive/20 text-destructive"
               : isActive 
-                ? "bg-success"
-                : "bg-muted-foreground"
-          )} />
-          {isCapturing ? 'Scanning' : isActive ? 'Ready' : 'Off'}
+                ? "bg-success/20 text-success"
+                : "bg-muted text-muted-foreground"
+          )}>
+            <div className={cn(
+              "w-1.5 h-1.5 rounded-full",
+              isCapturing 
+                ? "bg-destructive animate-pulse"
+                : isActive 
+                  ? "bg-success"
+                  : "bg-muted-foreground"
+            )} />
+            {isCapturing ? 'Scanning' : isActive ? 'Ready' : 'Off'}
+          </div>
         </div>
       </div>
 
       <div className="relative aspect-video rounded-lg overflow-hidden bg-muted">
-        <video
-          ref={videoRef}
-          className={cn(
-            "w-full h-full object-cover transition-opacity duration-300",
-            isActive ? "opacity-100" : "opacity-0"
-          )}
-          playsInline
-          muted
-        />
-        
-        {/* Canvas overlay for bounding boxes */}
-        <canvas
-          ref={canvasRef}
-          className="absolute inset-0 w-full h-full pointer-events-none"
-        />
+        <div 
+          className="w-full h-full transition-transform duration-300 ease-out"
+          style={{
+            transform: zoomTransform.transform,
+            transformOrigin: zoomTransform.origin
+          }}
+        >
+          <video
+            ref={videoRef}
+            className={cn(
+              "w-full h-full object-cover transition-opacity duration-300",
+              isActive ? "opacity-100" : "opacity-0"
+            )}
+            playsInline
+            muted
+          />
+          
+          {/* Canvas overlay for bounding boxes */}
+          <canvas
+            ref={canvasRef}
+            className="absolute inset-0 w-full h-full pointer-events-none"
+          />
+        </div>
         
         {!isActive && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
