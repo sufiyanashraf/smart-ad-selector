@@ -2,8 +2,10 @@ import { RefObject, useRef, useEffect, useState, useMemo } from 'react';
 import { Camera, CameraOff, AlertCircle, Monitor, FileVideo, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DetectionResult } from '@/types/ad';
+import { DetectionDebugInfo, TrackedFace } from '@/types/detection';
 import { InputSourceMode } from '@/hooks/useWebcam';
 import { Button } from '@/components/ui/button';
+import { DebugOverlay } from '@/components/DebugOverlay';
 
 interface WebcamPreviewProps {
   videoRef: RefObject<HTMLVideoElement>;
@@ -14,6 +16,9 @@ interface WebcamPreviewProps {
   detections?: DetectionResult[];
   inputMode?: InputSourceMode;
   videoFileName?: string | null;
+  debugMode?: boolean;
+  debugInfo?: DetectionDebugInfo | null;
+  trackedFaces?: TrackedFace[];
 }
 
 export const WebcamPreview = ({
@@ -25,6 +30,9 @@ export const WebcamPreview = ({
   detections = [],
   inputMode = 'webcam',
   videoFileName,
+  debugMode = false,
+  debugInfo = null,
+  trackedFaces = [],
 }: WebcamPreviewProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [zoomMode, setZoomMode] = useState<'none' | 'auto' | 'manual'>('none');
@@ -294,6 +302,13 @@ export const WebcamPreview = ({
       </div>
 
       <div className="relative aspect-video rounded-lg overflow-hidden bg-muted">
+        {/* Debug Overlay */}
+        <DebugOverlay 
+          debug={debugInfo} 
+          trackedFaces={trackedFaces} 
+          show={debugMode && isActive} 
+        />
+        
         <div 
           className="w-full h-full transition-transform duration-300 ease-out"
           style={{
