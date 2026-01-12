@@ -15,7 +15,8 @@ import { useWebcam } from '@/hooks/useWebcam';
 import { useFaceDetection, resetSimulatedPerson } from '@/hooks/useFaceDetection';
 import { useAdQueue } from '@/hooks/useAdQueue';
 import { sampleAds } from '@/data/sampleAds';
-import { Tv, Zap, Activity, AlertCircle, CheckCircle, Eye, EyeOff, Play, Square, Cpu } from 'lucide-react';
+import { Tv, Zap, Activity, AlertCircle, CheckCircle, Eye, EyeOff, Play, Square, Cpu, Home } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
@@ -631,6 +632,13 @@ const SmartAdsSystem = () => {
       {/* Header */}
       <header className="mb-8">
         <div className="flex items-center gap-3 mb-2">
+          <Link 
+            to="/"
+            className="p-2 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 border border-primary/30 hover:from-primary/30 hover:to-accent/30 transition-colors"
+            title="Back to Home"
+          >
+            <Home className="h-6 w-6 text-primary" />
+          </Link>
           <div className="p-2 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 border border-primary/30">
             <Tv className="h-6 w-6 text-primary" />
           </div>
