@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import * as faceapi from 'face-api.js';
 import * as tf from '@tensorflow/tfjs';
-import '@tensorflow/tfjs-backend-webgpu';
+
+// Detection timeout to prevent hanging
+const DETECTION_TIMEOUT = 10000;
 import { DetectionResult, FaceBoundingBox } from '@/types/ad';
 import { DetectionDebugInfo, CCTVDetectionConfig, DEFAULT_CCTV_CONFIG, DEFAULT_WEBCAM_CONFIG } from '@/types/detection';
 import { createPreprocessedCanvas, PreprocessingOptions, ROIConfig } from '@/utils/imagePreprocessing';
@@ -56,31 +58,23 @@ export const useFaceDetection = (
         setIsLoading(true);
         setLoadingProgress(10);
 
-        // Try WebGPU first, fallback to WebGL
+        // Use WebGL (stable with face-api.js) - WebGPU has kernel compatibility issues
         console.log('[TensorFlow] Initializing backend...');
         let selectedBackend = 'webgl';
         
         try {
-          if ('gpu' in navigator) {
-            await tf.setBackend('webgpu');
-            await tf.ready();
-            selectedBackend = 'webgpu';
-            console.log('[TensorFlow] ✅ Using WebGPU backend');
-          }
+          await tf.setBackend('webgl');
+          await tf.ready();
+          console.log('[TensorFlow] ✅ Using WebGL backend');
         } catch (e) {
-          console.log('[TensorFlow] WebGPU not available, trying WebGL...');
-        }
-        
-        if (selectedBackend !== 'webgpu') {
+          console.log('[TensorFlow] WebGL failed, trying CPU...');
           try {
-            await tf.setBackend('webgl');
-            await tf.ready();
-            console.log('[TensorFlow] ✅ Using WebGL backend');
-          } catch (e) {
             await tf.setBackend('cpu');
             await tf.ready();
             selectedBackend = 'cpu';
             console.log('[TensorFlow] ⚠️ Using CPU backend (slower)');
+          } catch (e2) {
+            throw new Error('No TensorFlow backend available');
           }
         }
         
@@ -282,7 +276,6 @@ export const useFaceDetection = (
   ): Promise<DetectionResult[]> => {
     // Prevent overlapping detection calls
     if (inFlightRef.current) {
-      console.log('[Detection] Skipping: previous detection still in flight');
       return [];
     }
 
@@ -293,7 +286,12 @@ export const useFaceDetection = (
     inFlightRef.current = true;
     const startTime = performance.now();
 
-    try {
+    // Timeout protection to prevent infinite hangs
+    const timeoutPromise = new Promise<DetectionResult[]>((_, reject) => {
+      setTimeout(() => reject(new Error('Detection timeout')), DETECTION_TIMEOUT);
+    });
+
+    const detectionPromise = (async (): Promise<DetectionResult[]> => {
       const config = getConfig();
       const sourceMode = options?.sourceMode ?? 'webcam';
       const isCCTV = options?.cctvMode ?? sourceMode === 'video';
@@ -425,6 +423,10 @@ export const useFaceDetection = (
       };
 
       return results;
+    })();
+
+    try {
+      return await Promise.race([detectionPromise, timeoutPromise]);
     } catch (err) {
       console.error('[Detection] Error:', err);
       return [];
