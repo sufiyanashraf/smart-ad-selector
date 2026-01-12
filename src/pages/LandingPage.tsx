@@ -65,7 +65,7 @@ const LandingPage = () => {
       gradient: "from-primary to-accent",
     },
     {
-      name: "M. Aliyan Hasan Qureshi",
+      name: "M. Aliyan H. Qureshi",
       role: "Creative Lead",
       description: "UI/UX design, marketing strategy, and project planning ensuring exceptional user experiences.",
       image: AliyanImg,
@@ -114,7 +114,7 @@ const LandingPage = () => {
   ];
 
   const stats = [
-    { value: "99.2%", label: "Detection Accuracy", icon: Target },
+    { value: "78.2%", label: "Detection Accuracy", icon: Target },
     { value: "<50ms", label: "Processing Time", icon: Clock },
     { value: "3", label: "Age Groups", icon: Users },
     { value: "100%", label: "Privacy Compliant", icon: Shield },
