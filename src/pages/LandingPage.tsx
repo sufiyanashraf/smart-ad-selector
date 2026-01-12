@@ -22,6 +22,7 @@ import Logo from '@/assets/Final_Logo.png';
 import SufiyanImg from '@/assets/team/Sufiyan.jpg';
 import AliyanImg from '@/assets/team/Aliyan.jpg';
 import MahnoorImg from '@/assets/team/mahnoor.jpg';
+import ActionImg from '@/assets/action.png';
 
 const LandingPage = () => {
   const navigate = useNavigate();
@@ -119,14 +120,6 @@ const LandingPage = () => {
     { value: '100%', label: 'Privacy Compliant', icon: Shield }
   ];
 
-  // Simulated detection boxes for the demo image
-  const detectionBoxes = [
-    { top: '15%', left: '20%', width: '12%', height: '22%', label: 'Male, Young', confidence: '94%' },
-    { top: '18%', left: '45%', width: '10%', height: '18%', label: 'Female, Adult', confidence: '91%' },
-    { top: '12%', left: '70%', width: '11%', height: '20%', label: 'Male, Adult', confidence: '88%' },
-    { top: '25%', left: '35%', width: '9%', height: '16%', label: 'Female, Young', confidence: '96%' },
-    { top: '20%', left: '58%', width: '10%', height: '19%', label: 'Male, Kid', confidence: '85%' },
-  ];
 
   return (
     <>
@@ -352,78 +345,15 @@ const LandingPage = () => {
             {/* Demo visualization */}
             <div className="max-w-5xl mx-auto">
               <div className="relative rounded-2xl overflow-hidden border border-border/50 shadow-2xl shadow-primary/10">
-                {/* Simulated crowd image with detection overlay */}
-                <div className="relative aspect-video bg-gradient-to-br from-muted to-muted/50">
-                  {/* Placeholder crowd visual */}
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="grid grid-cols-5 gap-4 p-8 opacity-30">
-                      {Array.from({ length: 15 }).map((_, i) => (
-                        <div 
-                          key={i} 
-                          className="w-16 h-24 rounded-lg bg-foreground/20"
-                          style={{ 
-                            transform: `translateY(${Math.sin(i) * 10}px)`,
-                            opacity: 0.3 + (i % 3) * 0.2
-                          }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Detection boxes overlay */}
-                  {detectionBoxes.map((box, index) => (
-                    <div
-                      key={index}
-                      className="absolute border-2 border-primary rounded-md animate-pulse"
-                      style={{
-                        top: box.top,
-                        left: box.left,
-                        width: box.width,
-                        height: box.height,
-                        animationDelay: `${index * 200}ms`
-                      }}
-                    >
-                      <div className="absolute -top-6 left-0 bg-primary text-primary-foreground text-xs px-2 py-0.5 rounded font-mono whitespace-nowrap">
-                        {box.label}
-                      </div>
-                      <div className="absolute -bottom-5 left-0 text-xs text-primary font-mono">
-                        {box.confidence}
-                      </div>
-                    </div>
-                  ))}
-
-                  {/* Scanning line effect */}
-                  <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                    <div className="absolute w-full h-1 bg-gradient-to-r from-transparent via-primary to-transparent opacity-50 animate-[scan_2s_ease-in-out_infinite]" />
-                  </div>
-
-                  {/* Stats overlay */}
-                  <div className="absolute top-4 right-4 glass-card rounded-lg p-3 text-sm font-mono">
-                    <div className="flex items-center gap-2 text-success">
-                      <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
-                      <span>Live Detection</span>
-                    </div>
-                    <div className="text-muted-foreground mt-1">
-                      Faces: <span className="text-primary font-bold">5</span> | 
-                      FPS: <span className="text-primary font-bold">30</span>
-                    </div>
-                  </div>
-
-                  {/* Demographics summary */}
-                  <div className="absolute bottom-4 left-4 glass-card rounded-lg p-3">
-                    <div className="text-xs text-muted-foreground mb-2">Audience Breakdown</div>
-                    <div className="flex gap-4 text-sm">
-                      <div>
-                        <span className="text-primary font-bold">3</span>
-                        <span className="text-muted-foreground ml-1">Male</span>
-                      </div>
-                      <div>
-                        <span className="text-accent font-bold">2</span>
-                        <span className="text-muted-foreground ml-1">Female</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                {/* Real AI detection demo image */}
+                <img 
+                  src={ActionImg} 
+                  alt="AI detection demo showing real-time demographic analysis with bounding boxes" 
+                  className="w-full h-auto"
+                />
+                
+                {/* Subtle overlay for effect */}
+                <div className="absolute inset-0 bg-gradient-to-t from-background/20 to-transparent pointer-events-none" />
               </div>
 
               {/* Tech stack badges */}
