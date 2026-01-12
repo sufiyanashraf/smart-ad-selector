@@ -183,9 +183,17 @@ export const useFaceDetection = (
     scaleBack: number,
     config: CCTVDetectionConfig,
     detectorUsed: 'tiny' | 'ssd',
-    roiOffset?: { x: number; y: number }
+    roiOffset?: { x: number; y: number },
+    debugMode: boolean = false
   ): { results: DetectionResult[]; rawCount: number; filteredCount: number } => {
     const rawCount = detections.length;
+    
+    // Use the LOWER of minFaceScore and sensitivity to avoid filtering too strictly
+    const effectiveMinScore = Math.min(config.minFaceScore, config.sensitivity);
+    
+    if (debugMode && rawCount > 0) {
+      console.log(`[Filter] Raw: ${rawCount}, minScore: ${effectiveMinScore.toFixed(2)}, minPx: ${config.minFaceSizePx}, minPct: ${config.minFaceSizePercent}%`);
+    }
     
     const results = detections
       .filter(detection => {
@@ -199,38 +207,39 @@ export const useFaceDetection = (
         const faceX = box.x / scaleBack + (roiOffset?.x ?? 0);
         const faceY = box.y / scaleBack + (roiOffset?.y ?? 0);
         
-        // Filter by face detection score
-        if (faceScore < config.minFaceScore) {
-          console.log('[Filter] Low faceScore:', faceScore.toFixed(2), '<', config.minFaceScore);
+        // Filter by face detection score (use effective minimum)
+        if (faceScore < effectiveMinScore) {
+          if (debugMode) console.log(`[Filter] ❌ Low score: ${faceScore.toFixed(2)} < ${effectiveMinScore.toFixed(2)}`);
           return false;
         }
         
         // Filter by minimum pixel size
         if (faceWidth < config.minFaceSizePx || faceHeight < config.minFaceSizePx) {
-          console.log('[Filter] Too small:', faceWidth.toFixed(0), 'x', faceHeight.toFixed(0), 'px');
+          if (debugMode) console.log(`[Filter] ❌ Too small: ${faceWidth.toFixed(0)}x${faceHeight.toFixed(0)}px < ${config.minFaceSizePx}px`);
           return false;
         }
         
         // Filter by percentage of frame
         const facePercent = (faceWidth * faceHeight) / (videoWidth * videoHeight) * 100;
         if (facePercent < config.minFaceSizePercent) {
-          console.log('[Filter] Too small percent:', facePercent.toFixed(2), '%');
+          if (debugMode) console.log(`[Filter] ❌ Too small: ${facePercent.toFixed(2)}% < ${config.minFaceSizePercent}%`);
           return false;
         }
         
         // Filter by aspect ratio (faces should be roughly square)
         const aspectRatio = faceWidth / faceHeight;
         if (aspectRatio < config.aspectRatioMin || aspectRatio > config.aspectRatioMax) {
-          console.log('[Filter] Bad aspect ratio:', aspectRatio.toFixed(2));
+          if (debugMode) console.log(`[Filter] ❌ Bad aspect: ${aspectRatio.toFixed(2)} not in [${config.aspectRatioMin}, ${config.aspectRatioMax}]`);
           return false;
         }
         
         // Check if face is within video bounds
         if (faceX < 0 || faceY < 0 || faceX + faceWidth > videoWidth || faceY + faceHeight > videoHeight) {
-          console.log('[Filter] Out of bounds');
+          if (debugMode) console.log('[Filter] ❌ Out of bounds');
           return false;
         }
         
+        if (debugMode) console.log(`[Filter] ✅ PASSED: score=${faceScore.toFixed(2)}, size=${faceWidth.toFixed(0)}x${faceHeight.toFixed(0)}px`);
         return true;
       })
       .map(detection => {
@@ -266,6 +275,10 @@ export const useFaceDetection = (
           lastSeen: Date.now(),
         } as DetectionResult;
       });
+
+    if (debugMode) {
+      console.log(`[Filter] Result: ${results.length}/${rawCount} passed`);
+    }
 
     return { results, rawCount, filteredCount: results.length };
   }, []);
@@ -316,25 +329,34 @@ export const useFaceDetection = (
         };
       }
 
+      // Use lower threshold for detection to get more raw faces
+      const detectionThreshold = Math.max(config.sensitivity - 0.05, 0.15);
+      
+      if (config.debugMode) {
+        console.log(`[Detection] Config: sensitivity=${config.sensitivity}, threshold=${detectionThreshold.toFixed(2)}, minScore=${config.minFaceScore}`);
+      }
+
       // ========== PASS 1: Standard detection ==========
       if (config.detector === 'ssd' && ssdLoaded) {
         // Use SSD only
         detectorUsed = 'ssd';
-        console.log('[Detection] Pass 1: SSD Mobilenet');
-        detections = await runSsdDetection(videoElement, config.sensitivity);
+        if (config.debugMode) console.log('[Detection] Pass 1: SSD Mobilenet');
+        detections = await runSsdDetection(videoElement, detectionThreshold);
       } else if (config.detector === 'tiny') {
         // Use TinyFace only
-        console.log('[Detection] Pass 1: TinyFaceDetector');
+        if (config.debugMode) console.log('[Detection] Pass 1: TinyFaceDetector');
         const inputSize = isCCTV ? 416 : 512;
-        detections = await runTinyDetection(videoElement, inputSize, config.sensitivity);
+        detections = await runTinyDetection(videoElement, inputSize, detectionThreshold);
       } else {
         // Dual mode: Try TinyFace first (faster)
-        console.log('[Detection] Pass 1: TinyFaceDetector (dual mode)');
+        if (config.debugMode) console.log('[Detection] Pass 1: TinyFaceDetector (dual mode)');
         const inputSize = isCCTV ? 416 : 512;
-        detections = await runTinyDetection(videoElement, inputSize, config.sensitivity);
+        detections = await runTinyDetection(videoElement, inputSize, detectionThreshold);
       }
 
-      console.log('[Detection] Pass 1 found', detections.length, 'raw faces');
+      if (config.debugMode || detections.length > 0) {
+        console.log('[Detection] Pass 1 found', detections.length, 'raw faces');
+      }
 
       // ========== PASS 2: CCTV rescue with preprocessing + upscale + SSD ==========
       if (detections.length === 0 && isCCTV && config.detector !== 'tiny') {
@@ -389,7 +411,8 @@ export const useFaceDetection = (
         scaleBack,
         config,
         detectorUsed,
-        roiOffset
+        roiOffset,
+        config.debugMode
       );
 
       // Update debug info
