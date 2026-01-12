@@ -80,15 +80,15 @@ export const DEFAULT_CCTV_CONFIG: CCTVDetectionConfig = {
 
 export const DEFAULT_WEBCAM_CONFIG: CCTVDetectionConfig = {
   detector: 'tiny',
-  sensitivity: 0.4,
+  sensitivity: 0.3,  // Lower = more sensitive
   preprocessing: { gamma: 1.0, contrast: 1.0, sharpen: 0, denoise: false },
   upscale: 1,
   roi: { enabled: false, x: 0, y: 0, width: 1, height: 1 },
-  minFaceScore: 0.45,
-  minFaceSizePx: 40,
-  minFaceSizePercent: 2,
-  aspectRatioMin: 0.6,
-  aspectRatioMax: 1.8,
+  minFaceScore: 0.25,  // Relaxed from 0.45 - let more detections through
+  minFaceSizePx: 20,   // Relaxed from 40 - smaller faces OK
+  minFaceSizePercent: 0.3,  // Relaxed from 2% - tiny faces OK
+  aspectRatioMin: 0.4,  // Wider range
+  aspectRatioMax: 2.5,  // Wider range
   minConsecutiveFrames: 1,
   holdFrames: 2,
   maxVelocityPx: 200,
