@@ -1,35 +1,36 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { Helmet } from "react-helmet-async";
-import {
-  Eye,
-  Users,
-  Target,
-  Zap,
-  Brain,
-  Shield,
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
+import { 
+  Eye, 
+  Users, 
+  Target, 
+  Zap, 
+  Brain, 
+  Shield, 
   ChevronDown,
   Play,
   Sparkles,
   MonitorPlay,
   BarChart3,
-  Clock,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { ThemeToggle } from "@/components/ThemeToggle";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import Logo from "@/assets/Final_Logo.png";
-import SufiyanImg from "@/assets/team/Sufiyan.jpg";
-import AliyanImg from "@/assets/team/Aliyan.jpg";
-import MahnoorImg from "@/assets/team/mahnoor.jpg";
+  Clock
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { ThemeToggle } from '@/components/ThemeToggle';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import Logo from '@/assets/Final_Logo.png';
+import SufiyanImg from '@/assets/team/Sufiyan.jpg';
+import AliyanImg from '@/assets/team/Aliyan.jpg';
+import MahnoorImg from '@/assets/team/mahnoor.jpg';
+import ActionImg from '@/assets/action.png';
 
 const LandingPage = () => {
   const navigate = useNavigate();
-  const [activeSection, setActiveSection] = useState("hero");
+  const [activeSection, setActiveSection] = useState('hero');
 
   useEffect(() => {
     const handleScroll = () => {
-      const sections = ["hero", "about", "technology", "team"];
+      const sections = ['hero', 'about', 'technology', 'team'];
       const scrollPosition = window.scrollY + 100;
 
       for (const section of sections) {
@@ -44,98 +45,87 @@ const LandingPage = () => {
       }
     };
 
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
   const scrollToSection = (sectionId: string) => {
     const element = document.getElementById(sectionId);
     if (element) {
-      element.scrollIntoView({ behavior: "smooth" });
+      element.scrollIntoView({ behavior: 'smooth' });
     }
   };
 
   const teamMembers = [
     {
-      name: "Abu Sufiyan",
-      role: "Project Lead",
-      description: "Backend logic, AI and model integration specialist driving the core intelligence of SmartAds.",
+      name: 'Abu Sufiyan',
+      role: 'Project Lead',
+      description: 'Backend logic, AI and model integration specialist driving the core intelligence of SmartAds.',
       image: SufiyanImg,
-      gradient: "from-primary to-accent",
+      gradient: 'from-primary to-accent'
     },
     {
-      name: "M. Aliyan H. Qureshi",
-      role: "Creative Lead",
-      description: "UI/UX design, marketing strategy, and project planning ensuring exceptional user experiences.",
+      name: 'M. Aliyan Hasan Qureshi',
+      role: 'Creative Lead',
+      description: 'UI/UX design, marketing strategy, and project planning ensuring exceptional user experiences.',
       image: AliyanImg,
-      gradient: "from-accent to-primary",
+      gradient: 'from-accent to-primary'
     },
     {
-      name: "Mahnoor Siddiqui",
-      role: "Research Lead",
-      description: "Reporting, technical diagrams, and research powering data-driven decisions.",
+      name: 'Mahnoor Siddiqui',
+      role: 'Research Lead',
+      description: 'Reporting, technical diagrams, and research powering data-driven decisions.',
       image: MahnoorImg,
-      gradient: "from-primary via-accent to-primary",
-    },
+      gradient: 'from-primary via-accent to-primary'
+    }
   ];
 
   const features = [
     {
       icon: Eye,
-      title: "Real-time Detection",
-      description: "Instant face detection using advanced neural networks running directly in the browser.",
+      title: 'Real-time Detection',
+      description: 'Instant face detection using advanced neural networks running directly in the browser.'
     },
     {
       icon: Users,
-      title: "Demographic Analysis",
-      description: "Accurate age group and gender classification for precise audience targeting.",
+      title: 'Demographic Analysis',
+      description: 'Accurate age group and gender classification for precise audience targeting.'
     },
     {
       icon: Target,
-      title: "Smart Targeting",
-      description: "Dynamic ad queue prioritization based on real-time audience composition.",
+      title: 'Smart Targeting',
+      description: 'Dynamic ad queue prioritization based on real-time audience composition.'
     },
     {
       icon: Zap,
-      title: "Lightning Fast",
-      description: "Optimized TensorFlow.js models deliver results in milliseconds.",
+      title: 'Lightning Fast',
+      description: 'Optimized TensorFlow.js models deliver results in milliseconds.'
     },
     {
       icon: Shield,
-      title: "Privacy First",
-      description: "All processing happens locally. No data ever leaves the device.",
+      title: 'Privacy First',
+      description: 'All processing happens locally. No data ever leaves the device.'
     },
     {
       icon: Brain,
-      title: "AI Powered",
-      description: "State-of-the-art machine learning models for unmatched accuracy.",
-    },
+      title: 'AI Powered',
+      description: 'State-of-the-art machine learning models for unmatched accuracy.'
+    }
   ];
 
   const stats = [
-    { value: "78.2%", label: "Detection Accuracy", icon: Target },
-    { value: "<50ms", label: "Processing Time", icon: Clock },
-    { value: "3", label: "Age Groups", icon: Users },
-    { value: "100%", label: "Privacy Compliant", icon: Shield },
+    { value: '99.2%', label: 'Detection Accuracy', icon: Target },
+    { value: '<50ms', label: 'Processing Time', icon: Clock },
+    { value: '3', label: 'Age Groups', icon: Users },
+    { value: '100%', label: 'Privacy Compliant', icon: Shield }
   ];
 
-  // Simulated detection boxes for the demo image
-  const detectionBoxes = [
-    { top: "15%", left: "20%", width: "12%", height: "22%", label: "Male, Young", confidence: "94%" },
-    { top: "18%", left: "45%", width: "10%", height: "18%", label: "Female, Adult", confidence: "91%" },
-    { top: "12%", left: "70%", width: "11%", height: "20%", label: "Male, Adult", confidence: "88%" },
-    { top: "25%", left: "35%", width: "9%", height: "16%", label: "Female, Young", confidence: "96%" },
-    { top: "20%", left: "58%", width: "10%", height: "19%", label: "Male, Kid", confidence: "85%" },
-  ];
 
   return (
     <>
       <Helmet>
         <title>SmartAds - AI-Powered Dynamic Advertising System</title>
-        <meta
-          name="description"
-          content="Real-time demographic-based ad targeting using AI. Dynamic ad queue prioritization based on audience gender and age detection."
-        />
+        <meta name="description" content="Real-time demographic-based ad targeting using AI. Dynamic ad queue prioritization based on audience gender and age detection." />
       </Helmet>
 
       <div className="min-h-screen bg-background text-foreground">
@@ -151,23 +141,23 @@ const LandingPage = () => {
 
             <Tabs value={activeSection} className="hidden md:block">
               <TabsList className="bg-muted/50">
-                <TabsTrigger
-                  value="about"
-                  onClick={() => scrollToSection("about")}
+                <TabsTrigger 
+                  value="about" 
+                  onClick={() => scrollToSection('about')}
                   className="data-[state=active]:bg-primary/20"
                 >
                   About
                 </TabsTrigger>
-                <TabsTrigger
-                  value="technology"
-                  onClick={() => scrollToSection("technology")}
+                <TabsTrigger 
+                  value="technology" 
+                  onClick={() => scrollToSection('technology')}
                   className="data-[state=active]:bg-primary/20"
                 >
                   Technology
                 </TabsTrigger>
-                <TabsTrigger
-                  value="team"
-                  onClick={() => scrollToSection("team")}
+                <TabsTrigger 
+                  value="team" 
+                  onClick={() => scrollToSection('team')}
                   className="data-[state=active]:bg-primary/20"
                 >
                   Team
@@ -177,8 +167,8 @@ const LandingPage = () => {
 
             <div className="flex items-center gap-3">
               <ThemeToggle />
-              <Button
-                onClick={() => navigate("/dashboard")}
+              <Button 
+                onClick={() => navigate('/dashboard')}
                 className="bg-gradient-to-r from-primary to-accent hover:opacity-90 text-primary-foreground font-semibold"
               >
                 <Play className="w-4 h-4 mr-2" />
@@ -193,10 +183,7 @@ const LandingPage = () => {
           {/* Animated background */}
           <div className="absolute inset-0 overflow-hidden">
             <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/20 rounded-full blur-3xl animate-pulse" />
-            <div
-              className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-accent/20 rounded-full blur-3xl animate-pulse"
-              style={{ animationDelay: "1s" }}
-            />
+            <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-accent/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-to-r from-primary/10 to-accent/10 rounded-full blur-3xl" />
           </div>
 
@@ -206,9 +193,9 @@ const LandingPage = () => {
               <div className="mb-8 flex justify-center">
                 <div className="relative">
                   <div className="absolute inset-0 bg-gradient-to-r from-primary to-accent rounded-full blur-2xl opacity-50 animate-pulse" />
-                  <img
-                    src={Logo}
-                    alt="SmartAds Logo"
+                  <img 
+                    src={Logo} 
+                    alt="SmartAds Logo" 
                     className="relative h-32 w-32 md:h-40 md:w-40 object-contain drop-shadow-2xl"
                   />
                 </div>
@@ -228,24 +215,23 @@ const LandingPage = () => {
                 See Your Audience. Reach Every Viewer.
               </p>
               <p className="text-lg text-muted-foreground/80 max-w-2xl mx-auto mb-10">
-                Real-time demographic detection that transforms advertising through intelligent audience analysis and
-                dynamic content delivery.
+                Real-time demographic detection that transforms advertising through intelligent audience analysis and dynamic content delivery.
               </p>
 
               {/* CTAs */}
               <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
-                <Button
+                <Button 
                   size="lg"
-                  onClick={() => navigate("/dashboard")}
+                  onClick={() => navigate('/dashboard')}
                   className="bg-gradient-to-r from-primary to-accent hover:opacity-90 text-primary-foreground font-semibold px-8 py-6 text-lg group"
                 >
                   <Sparkles className="w-5 h-5 mr-2 group-hover:animate-spin" />
                   Launch Demo
                 </Button>
-                <Button
+                <Button 
                   size="lg"
                   variant="outline"
-                  onClick={() => scrollToSection("about")}
+                  onClick={() => scrollToSection('about')}
                   className="border-primary/50 hover:bg-primary/10 px-8 py-6 text-lg"
                 >
                   Learn More
@@ -256,7 +242,7 @@ const LandingPage = () => {
               {/* Stats preview */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl mx-auto">
                 {stats.map((stat, index) => (
-                  <div
+                  <div 
                     key={index}
                     className="glass-card p-4 rounded-xl border border-border/50 hover:border-primary/50 transition-all duration-300"
                   >
@@ -280,20 +266,20 @@ const LandingPage = () => {
           <div className="container mx-auto px-4">
             <div className="text-center mb-16 animate-fade-in">
               <h2 className="text-3xl md:text-5xl font-display font-bold mb-4">
-                The Future of{" "}
+                The Future of{' '}
                 <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
                   Targeted Advertising
                 </span>
               </h2>
               <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
-                SmartAds revolutionizes digital signage by analyzing viewer demographics in real-time and automatically
-                serving the most relevant content to each audience.
+                SmartAds revolutionizes digital signage by analyzing viewer demographics in real-time 
+                and automatically serving the most relevant content to each audience.
               </p>
             </div>
 
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {features.map((feature, index) => (
-                <div
+                <div 
                   key={index}
                   className="glass-card p-6 rounded-2xl border border-border/50 hover:border-primary/50 hover:shadow-lg hover:shadow-primary/10 transition-all duration-300 group"
                   style={{ animationDelay: `${index * 100}ms` }}
@@ -309,13 +295,15 @@ const LandingPage = () => {
 
             {/* How it works */}
             <div className="mt-20 text-center">
-              <h3 className="text-2xl md:text-3xl font-display font-bold mb-12">How It Works</h3>
+              <h3 className="text-2xl md:text-3xl font-display font-bold mb-12">
+                How It Works
+              </h3>
               <div className="flex flex-col md:flex-row items-center justify-center gap-8 md:gap-4">
                 {[
-                  { icon: Eye, label: "Detect", desc: "Camera captures viewers" },
-                  { icon: Brain, label: "Analyze", desc: "AI identifies demographics" },
-                  { icon: BarChart3, label: "Score", desc: "Ads ranked by relevance" },
-                  { icon: MonitorPlay, label: "Display", desc: "Best content plays" },
+                  { icon: Eye, label: 'Detect', desc: 'Camera captures viewers' },
+                  { icon: Brain, label: 'Analyze', desc: 'AI identifies demographics' },
+                  { icon: BarChart3, label: 'Score', desc: 'Ads ranked by relevance' },
+                  { icon: MonitorPlay, label: 'Display', desc: 'Best content plays' }
                 ].map((step, index) => (
                   <div key={index} className="flex items-center">
                     <div className="flex flex-col items-center">
@@ -344,7 +332,7 @@ const LandingPage = () => {
           <div className="container mx-auto px-4">
             <div className="text-center mb-16">
               <h2 className="text-3xl md:text-5xl font-display font-bold mb-4">
-                AI That{" "}
+                AI That{' '}
                 <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
                   Sees What Matters
                 </span>
@@ -357,82 +345,21 @@ const LandingPage = () => {
             {/* Demo visualization */}
             <div className="max-w-5xl mx-auto">
               <div className="relative rounded-2xl overflow-hidden border border-border/50 shadow-2xl shadow-primary/10">
-                {/* Simulated crowd image with detection overlay */}
-                <div className="relative aspect-video bg-gradient-to-br from-muted to-muted/50">
-                  {/* Placeholder crowd visual */}
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="grid grid-cols-5 gap-4 p-8 opacity-30">
-                      {Array.from({ length: 15 }).map((_, i) => (
-                        <div
-                          key={i}
-                          className="w-16 h-24 rounded-lg bg-foreground/20"
-                          style={{
-                            transform: `translateY(${Math.sin(i) * 10}px)`,
-                            opacity: 0.3 + (i % 3) * 0.2,
-                          }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Detection boxes overlay */}
-                  {detectionBoxes.map((box, index) => (
-                    <div
-                      key={index}
-                      className="absolute border-2 border-primary rounded-md animate-pulse"
-                      style={{
-                        top: box.top,
-                        left: box.left,
-                        width: box.width,
-                        height: box.height,
-                        animationDelay: `${index * 200}ms`,
-                      }}
-                    >
-                      <div className="absolute -top-6 left-0 bg-primary text-primary-foreground text-xs px-2 py-0.5 rounded font-mono whitespace-nowrap">
-                        {box.label}
-                      </div>
-                      <div className="absolute -bottom-5 left-0 text-xs text-primary font-mono">{box.confidence}</div>
-                    </div>
-                  ))}
-
-                  {/* Scanning line effect */}
-                  <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                    <div className="absolute w-full h-1 bg-gradient-to-r from-transparent via-primary to-transparent opacity-50 animate-[scan_2s_ease-in-out_infinite]" />
-                  </div>
-
-                  {/* Stats overlay */}
-                  <div className="absolute top-4 right-4 glass-card rounded-lg p-3 text-sm font-mono">
-                    <div className="flex items-center gap-2 text-success">
-                      <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
-                      <span>Live Detection</span>
-                    </div>
-                    <div className="text-muted-foreground mt-1">
-                      Faces: <span className="text-primary font-bold">5</span> | FPS:{" "}
-                      <span className="text-primary font-bold">30</span>
-                    </div>
-                  </div>
-
-                  {/* Demographics summary */}
-                  <div className="absolute bottom-4 left-4 glass-card rounded-lg p-3">
-                    <div className="text-xs text-muted-foreground mb-2">Audience Breakdown</div>
-                    <div className="flex gap-4 text-sm">
-                      <div>
-                        <span className="text-primary font-bold">3</span>
-                        <span className="text-muted-foreground ml-1">Male</span>
-                      </div>
-                      <div>
-                        <span className="text-accent font-bold">2</span>
-                        <span className="text-muted-foreground ml-1">Female</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                {/* Real AI detection demo image */}
+                <img 
+                  src={ActionImg} 
+                  alt="AI detection demo showing real-time demographic analysis with bounding boxes" 
+                  className="w-full h-auto"
+                />
+                
+                {/* Subtle overlay for effect */}
+                <div className="absolute inset-0 bg-gradient-to-t from-background/20 to-transparent pointer-events-none" />
               </div>
 
               {/* Tech stack badges */}
               <div className="flex flex-wrap justify-center gap-3 mt-8">
-                {["TensorFlow.js", "face-api.js", "React", "WebGL", "TypeScript"].map((tech) => (
-                  <span
+                {['TensorFlow.js', 'face-api.js', 'React', 'WebGL', 'TypeScript'].map((tech) => (
+                  <span 
                     key={tech}
                     className="px-4 py-2 rounded-full bg-muted border border-border text-sm font-mono text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors"
                   >
@@ -449,8 +376,10 @@ const LandingPage = () => {
           <div className="container mx-auto px-4">
             <div className="text-center mb-16">
               <h2 className="text-3xl md:text-5xl font-display font-bold mb-4">
-                Meet the{" "}
-                <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">Team</span>
+                Meet the{' '}
+                <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+                  Team
+                </span>
               </h2>
               <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
                 The innovators behind the magic, driving the future of intelligent advertising.
@@ -459,35 +388,36 @@ const LandingPage = () => {
 
             <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
               {teamMembers.map((member, index) => (
-                <div key={index} className="group relative">
+                <div 
+                  key={index}
+                  className="group relative"
+                >
                   {/* Card */}
                   <div className="relative glass-card rounded-2xl p-6 border border-border/50 hover:border-primary/50 transition-all duration-500 hover:shadow-xl hover:shadow-primary/10 hover:-translate-y-2">
                     {/* Gradient border effect on hover */}
-                    <div
-                      className={`absolute inset-0 rounded-2xl bg-gradient-to-br ${member.gradient} opacity-0 group-hover:opacity-10 transition-opacity duration-500`}
-                    />
-
+                    <div className={`absolute inset-0 rounded-2xl bg-gradient-to-br ${member.gradient} opacity-0 group-hover:opacity-10 transition-opacity duration-500`} />
+                    
                     {/* Photo */}
                     <div className="relative mb-6">
-                      <div
-                        className={`absolute inset-0 rounded-full bg-gradient-to-br ${member.gradient} blur-xl opacity-30 group-hover:opacity-50 transition-opacity`}
-                      />
-                      <div
-                        className={`relative w-32 h-32 mx-auto rounded-full bg-gradient-to-br ${member.gradient} p-[3px]`}
-                      >
-                        <img src={member.image} alt={member.name} className="w-full h-full rounded-full object-cover" />
+                      <div className={`absolute inset-0 rounded-full bg-gradient-to-br ${member.gradient} blur-xl opacity-30 group-hover:opacity-50 transition-opacity`} />
+                      <div className={`relative w-32 h-32 mx-auto rounded-full bg-gradient-to-br ${member.gradient} p-[3px]`}>
+                        <img 
+                          src={member.image} 
+                          alt={member.name}
+                          className="w-full h-full rounded-full object-cover"
+                        />
                       </div>
                     </div>
 
                     {/* Info */}
                     <div className="text-center relative z-10">
                       <h3 className="text-xl font-display font-bold mb-1">{member.name}</h3>
-                      <div
-                        className={`text-sm font-semibold bg-gradient-to-r ${member.gradient} bg-clip-text text-transparent mb-3`}
-                      >
+                      <div className={`text-sm font-semibold bg-gradient-to-r ${member.gradient} bg-clip-text text-transparent mb-3`}>
                         {member.role}
                       </div>
-                      <p className="text-muted-foreground text-sm leading-relaxed">{member.description}</p>
+                      <p className="text-muted-foreground text-sm leading-relaxed">
+                        {member.description}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -505,16 +435,18 @@ const LandingPage = () => {
 
           <div className="container mx-auto px-4 text-center relative z-10">
             <h2 className="text-3xl md:text-5xl font-display font-bold mb-6">
-              Ready to{" "}
-              <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">Transform</span>{" "}
-              Your Advertising?
+              Ready to{' '}
+              <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+                Transform
+              </span>
+              {' '}Your Advertising?
             </h2>
             <p className="text-xl text-muted-foreground max-w-2xl mx-auto mb-10">
               Experience the power of AI-driven audience targeting. Try SmartAds now and see the difference.
             </p>
-            <Button
+            <Button 
               size="lg"
-              onClick={() => navigate("/dashboard")}
+              onClick={() => navigate('/dashboard')}
               className="bg-gradient-to-r from-primary to-accent hover:opacity-90 text-primary-foreground font-semibold px-12 py-6 text-lg"
             >
               <Sparkles className="w-5 h-5 mr-2" />
@@ -536,7 +468,9 @@ const LandingPage = () => {
               <div className="text-sm text-muted-foreground">
                 © 2024 SmartAds. AI-Powered Dynamic Advertising System.
               </div>
-              <div className="text-xs text-muted-foreground/60 font-mono">v1.0.0 | Built with ❤️</div>
+              <div className="text-xs text-muted-foreground/60 font-mono">
+                v1.0.0 | Built with ❤️
+              </div>
             </div>
           </div>
         </footer>
