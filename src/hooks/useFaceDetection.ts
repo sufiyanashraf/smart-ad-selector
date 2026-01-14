@@ -130,63 +130,100 @@ export const useFaceDetection = (
     };
   }, [sensitivity, options]);
 
-  // Merge detections and deduplicate by position using IoU
+  // Merge detections and deduplicate by position using IoU + containment
   const mergeDetections = useCallback((
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     detections: any[],
-    videoWidth: number,
-    videoHeight: number
+    _videoWidth: number,
+    _videoHeight: number,
+    iouThreshold: number = 0.55,
+    containmentThreshold: number = 0.85
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ): any[] => {
     if (detections.length === 0) return [];
-    
-    // Sort by score descending
-    const sorted = [...detections].sort((a, b) => {
-      const scoreA = (a.detection?.score ?? a.score) || 0;
-      const scoreB = (b.detection?.score ?? b.score) || 0;
-      return scoreB - scoreA;
-    });
-    
+
+    const getScore = (d: any) => (d.detection?.score ?? d.score ?? 0) as number;
+    const getBox = (d: any) => d.detection?.box ?? d.box;
+
+    // Sort by score descending so we keep the best box
+    const sorted = [...detections].sort((a, b) => getScore(b) - getScore(a));
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const merged: any[] = [];
-    const used = new Set<number>();
-    
-    for (let i = 0; i < sorted.length; i++) {
-      if (used.has(i)) continue;
-      
-      merged.push(sorted[i]);
-      used.add(i);
-      
-      const boxA = sorted[i].detection?.box ?? sorted[i].box;
-      if (!boxA) continue;
-      
-      // Mark overlapping detections as used
-      for (let j = i + 1; j < sorted.length; j++) {
-        if (used.has(j)) continue;
-        
-        const boxB = sorted[j].detection?.box ?? sorted[j].box;
-        if (!boxB) continue;
-        
-        // Calculate IoU
+
+    for (const cand of sorted) {
+      const boxB = getBox(cand);
+      if (!boxB) continue;
+
+      let isDuplicate = false;
+
+      for (const kept of merged) {
+        const boxA = getBox(kept);
+        if (!boxA) continue;
+
+        // IoU
         const x1 = Math.max(boxA.x, boxB.x);
         const y1 = Math.max(boxA.y, boxB.y);
         const x2 = Math.min(boxA.x + boxA.width, boxB.x + boxB.width);
         const y2 = Math.min(boxA.y + boxA.height, boxB.y + boxB.height);
-        
+
         const intersection = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
         const areaA = boxA.width * boxA.height;
         const areaB = boxB.width * boxB.height;
         const union = areaA + areaB - intersection;
-        
         const iou = union > 0 ? intersection / union : 0;
-        
-        if (iou > 0.3) {  // If 30%+ overlap, skip duplicate
-          used.add(j);
+
+        // Containment (common in multi-scale: small box inside big box)
+        const containment = areaB > 0 ? intersection / areaB : 0; // how much of B is inside A
+
+        if (iou >= iouThreshold || containment >= containmentThreshold) {
+          isDuplicate = true;
+          break;
         }
       }
+
+      if (!isDuplicate) merged.push(cand);
     }
-    
+
     return merged;
+  }, []);
+
+  // Dedupe final results to avoid multiple boxes on the same face
+  const dedupeResultsByIoU = useCallback((results: DetectionResult[]): DetectionResult[] => {
+    if (results.length <= 1) return results;
+
+    const sorted = [...results].sort((a, b) => (b.faceScore ?? 0) - (a.faceScore ?? 0));
+    const kept: DetectionResult[] = [];
+
+    for (const r of sorted) {
+      const b = r.boundingBox;
+      let dup = false;
+
+      for (const k of kept) {
+        const a = k.boundingBox;
+
+        const x1 = Math.max(a.x, b.x);
+        const y1 = Math.max(a.y, b.y);
+        const x2 = Math.min(a.x + a.width, b.x + b.width);
+        const y2 = Math.min(a.y + a.height, b.y + b.height);
+
+        const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+        const areaA = a.width * a.height;
+        const areaB = b.width * b.height;
+        const union = areaA + areaB - inter;
+        const iou = union > 0 ? inter / union : 0;
+        const containment = areaB > 0 ? inter / areaB : 0;
+
+        if (iou >= 0.6 || containment >= 0.9) {
+          dup = true;
+          break;
+        }
+      }
+
+      if (!dup) kept.push(r);
+    }
+
+    return kept;
   }, []);
 
   // Run TinyFaceDetector
@@ -501,35 +538,48 @@ export const useFaceDetection = (
       }
       
       // ========== PASS 3: Ultra-low threshold scan for difficult cases ==========
+      // This pass is prone to "wall/sky" false positives, so we:
+      // 1) keep the model threshold ultra-low to *propose* candidates
+      // 2) then require a higher candidate score before merging
       if (detections.length < 5 && isCCTV) {
         console.log('[Detection] Pass 3: Ultra-low threshold scan...');
-        
-        const ultraLowThreshold = 0.05;  // Accept almost anything
-        
+
+        const ultraLowThreshold = 0.05; // propose candidates
+        const pass3MinCandidateScore = Math.max(config.minFaceScore, 0.18); // accept only stronger candidates
+
         try {
           // Create maximally enhanced canvas
           const enhancedCanvas = createProcessedCanvas(
             videoElement,
             { gamma: 1.8, contrast: 2.0, sharpen: 0.6, denoise: true },
-            2.5,  // Higher upscale
+            2.5, // Higher upscale
             undefined
           );
-          
+
           if (enhancedCanvas) {
             const pass3Detections = await Promise.all([
               runTinyDetection(enhancedCanvas, 608, ultraLowThreshold),
               ssdLoaded ? runSsdDetection(enhancedCanvas, ultraLowThreshold) : Promise.resolve([]),
             ]);
-            
-            const mergedPass3 = mergeDetections(pass3Detections.flat(), videoWidth, videoHeight);
-            
+
+            // Keep only stronger candidates (reduces wall/sky false positives)
+            const strongCandidates = pass3Detections
+              .flat()
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              .filter((d: any) => {
+                const score = (d.detection?.score ?? d.score ?? 0) as number;
+                return score >= pass3MinCandidateScore;
+              });
+
+            const mergedPass3 = mergeDetections(strongCandidates, videoWidth, videoHeight, 0.6, 0.9);
+
             if (mergedPass3.length > 0) {
-              detections = mergeDetections([...detections, ...mergedPass3], videoWidth, videoHeight);
+              detections = mergeDetections([...detections, ...mergedPass3], videoWidth, videoHeight, 0.6, 0.9);
               scaleBack = 2.5;
               preprocessingApplied = true;
               upscaled = true;
             }
-            
+
             console.log('[Detection] Pass 3 found', mergedPass3.length, 'additional faces, total:', detections.length);
           }
         } catch (err) {
@@ -579,7 +629,7 @@ export const useFaceDetection = (
         roiActive: config.roi.enabled,
       };
 
-      return results;
+      return dedupeResultsByIoU(results);
     })();
 
     try {
@@ -596,6 +646,8 @@ export const useFaceDetection = (
     backend,
     options,
     getConfig,
+    mergeDetections,
+    dedupeResultsByIoU,
     runTinyDetection,
     runSsdDetection,
     createProcessedCanvas,
