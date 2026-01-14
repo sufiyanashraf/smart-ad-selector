@@ -26,7 +26,9 @@ const SmartAdsSystem = () => {
   const [captureSettings, setCaptureSettings] = useState<CaptureSettings>({
     startPercent: 60,
     endPercent: 100,
-    detectionSensitivity: 0.4,
+    detectionSensitivity: 0.35,
+    detectionMode: 'accurate',
+    videoQuality: 'lowQuality',
   });
 
   // CCTV mode settings

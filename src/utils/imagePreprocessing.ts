@@ -34,6 +34,10 @@ export const CCTV_PRESETS: Record<string, PreprocessingOptions> = {
   outdoor: { gamma: 1.0, contrast: 1.1, sharpen: 0.2, denoise: false },
   nightIR: { gamma: 1.5, contrast: 1.5, sharpen: 0.4, denoise: true },
   lowLight: { gamma: 1.8, contrast: 1.4, sharpen: 0.5, denoise: true },
+  // Low quality CCTV preset - aggressive enhancement for maximum face detection
+  lowQuality: { gamma: 1.4, contrast: 1.5, sharpen: 0.5, denoise: true },
+  // Crowd detection preset - balanced for multiple faces
+  crowd: { gamma: 1.3, contrast: 1.4, sharpen: 0.4, denoise: true },
 };
 
 export const DEFAULT_CCTV_SETTINGS: CCTVSettings = {
