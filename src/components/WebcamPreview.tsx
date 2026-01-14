@@ -1,8 +1,9 @@
 import { RefObject, useRef, useEffect, useState, useMemo } from 'react';
-import { Camera, CameraOff, AlertCircle, Monitor, FileVideo, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+import { Camera, CameraOff, AlertCircle, Monitor, FileVideo, ZoomIn, ZoomOut, Maximize2, Check, X, Tag } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DetectionResult } from '@/types/ad';
 import { DetectionDebugInfo, TrackedFace } from '@/types/detection';
+import { GroundTruthEntry } from '@/types/evaluation';
 import { InputSourceMode } from '@/hooks/useWebcam';
 import { Button } from '@/components/ui/button';
 import { DebugOverlay } from '@/components/DebugOverlay';
@@ -19,6 +20,10 @@ interface WebcamPreviewProps {
   debugMode?: boolean;
   debugInfo?: DetectionDebugInfo | null;
   trackedFaces?: TrackedFace[];
+  /** Enable labeling mode for evaluation */
+  labelingMode?: boolean;
+  /** Callback when user labels a detection */
+  onLabelDetection?: (entry: GroundTruthEntry) => void;
 }
 
 export const WebcamPreview = ({
@@ -33,10 +38,13 @@ export const WebcamPreview = ({
   debugMode = false,
   debugInfo = null,
   trackedFaces = [],
+  labelingMode = false,
+  onLabelDetection,
 }: WebcamPreviewProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [zoomMode, setZoomMode] = useState<'none' | 'auto' | 'manual'>('none');
   const [manualZoom, setManualZoom] = useState(1);
+  const [labelingFace, setLabelingFace] = useState<string | null>(null);
 
   // Calculate zoom transform to focus on detected faces
   const zoomTransform = useMemo(() => {
@@ -331,6 +339,194 @@ export const WebcamPreview = ({
             ref={canvasRef}
             className="absolute inset-0 w-full h-full pointer-events-none"
           />
+          
+          {/* Labeling buttons overlay */}
+          {labelingMode && isActive && detections.map((detection, idx) => {
+            if (!detection.boundingBox || !videoRef.current) return null;
+            
+            const video = videoRef.current;
+            const rect = video.getBoundingClientRect();
+            const videoWidth = video.videoWidth || 640;
+            const videoHeight = video.videoHeight || 480;
+            const scaleX = rect.width / videoWidth;
+            const scaleY = rect.height / videoHeight;
+            
+            const scaledX = detection.boundingBox.x * scaleX;
+            const scaledY = detection.boundingBox.y * scaleY;
+            const scaledWidth = detection.boundingBox.width * scaleX;
+            const scaledHeight = detection.boundingBox.height * scaleY;
+            const faceId = detection.trackingId || `face_${idx}`;
+            
+            const isLabeling = labelingFace === faceId;
+            
+            return (
+              <div
+                key={faceId}
+                className="absolute"
+                style={{
+                  left: `${scaledX}px`,
+                  top: `${scaledY + scaledHeight + 4}px`,
+                  width: `${Math.max(scaledWidth, 120)}px`,
+                }}
+              >
+                {!isLabeling ? (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="w-full h-6 text-[10px] gap-1 opacity-90 hover:opacity-100"
+                    onClick={() => setLabelingFace(faceId)}
+                  >
+                    <Tag className="h-3 w-3" />
+                    Label
+                  </Button>
+                ) : (
+                  <div className="bg-background/95 border rounded-md p-2 space-y-2 shadow-lg">
+                    <div className="text-[10px] font-medium text-center">Correct Gender?</div>
+                    <div className="flex gap-1">
+                      <Button
+                        size="sm"
+                        variant={detection.gender === 'male' ? 'default' : 'outline'}
+                        className="flex-1 h-6 text-[10px]"
+                        onClick={() => {
+                          if (onLabelDetection && detection.boundingBox) {
+                            onLabelDetection({
+                              id: `${Date.now()}_${idx}`,
+                              timestamp: Date.now(),
+                              boundingBox: detection.boundingBox,
+                              detectedGender: detection.gender,
+                              detectedAgeGroup: detection.ageGroup,
+                              detectedConfidence: detection.confidence,
+                              detectedFaceScore: detection.faceScore,
+                              actualGender: 'male',
+                              actualAgeGroup: detection.ageGroup,
+                              isFalsePositive: false,
+                            });
+                          }
+                          setLabelingFace(null);
+                        }}
+                      >
+                        ♂ Male
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={detection.gender === 'female' ? 'default' : 'outline'}
+                        className="flex-1 h-6 text-[10px]"
+                        onClick={() => {
+                          if (onLabelDetection && detection.boundingBox) {
+                            onLabelDetection({
+                              id: `${Date.now()}_${idx}`,
+                              timestamp: Date.now(),
+                              boundingBox: detection.boundingBox,
+                              detectedGender: detection.gender,
+                              detectedAgeGroup: detection.ageGroup,
+                              detectedConfidence: detection.confidence,
+                              detectedFaceScore: detection.faceScore,
+                              actualGender: 'female',
+                              actualAgeGroup: detection.ageGroup,
+                              isFalsePositive: false,
+                            });
+                          }
+                          setLabelingFace(null);
+                        }}
+                      >
+                        ♀ Female
+                      </Button>
+                    </div>
+                    <div className="text-[10px] font-medium text-center">Correct Age?</div>
+                    <div className="flex gap-1">
+                      {(['kid', 'young', 'adult'] as const).map(age => (
+                        <Button
+                          key={age}
+                          size="sm"
+                          variant={detection.ageGroup === age ? 'default' : 'outline'}
+                          className="flex-1 h-6 text-[10px] px-1"
+                          onClick={() => {
+                            if (onLabelDetection && detection.boundingBox) {
+                              onLabelDetection({
+                                id: `${Date.now()}_${idx}`,
+                                timestamp: Date.now(),
+                                boundingBox: detection.boundingBox,
+                                detectedGender: detection.gender,
+                                detectedAgeGroup: detection.ageGroup,
+                                detectedConfidence: detection.confidence,
+                                detectedFaceScore: detection.faceScore,
+                                actualGender: detection.gender,
+                                actualAgeGroup: age,
+                                isFalsePositive: false,
+                              });
+                            }
+                            setLabelingFace(null);
+                          }}
+                        >
+                          {age}
+                        </Button>
+                      ))}
+                    </div>
+                    <div className="flex gap-1">
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        className="flex-1 h-6 text-[10px]"
+                        onClick={() => {
+                          if (onLabelDetection && detection.boundingBox) {
+                            onLabelDetection({
+                              id: `${Date.now()}_${idx}`,
+                              timestamp: Date.now(),
+                              boundingBox: detection.boundingBox,
+                              detectedGender: detection.gender,
+                              detectedAgeGroup: detection.ageGroup,
+                              detectedConfidence: detection.confidence,
+                              detectedFaceScore: detection.faceScore,
+                              actualGender: detection.gender,
+                              actualAgeGroup: detection.ageGroup,
+                              isFalsePositive: true,
+                            });
+                          }
+                          setLabelingFace(null);
+                        }}
+                      >
+                        <X className="h-3 w-3 mr-1" />
+                        Not Face
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="default"
+                        className="flex-1 h-6 text-[10px] bg-green-600 hover:bg-green-700"
+                        onClick={() => {
+                          if (onLabelDetection && detection.boundingBox) {
+                            onLabelDetection({
+                              id: `${Date.now()}_${idx}`,
+                              timestamp: Date.now(),
+                              boundingBox: detection.boundingBox,
+                              detectedGender: detection.gender,
+                              detectedAgeGroup: detection.ageGroup,
+                              detectedConfidence: detection.confidence,
+                              detectedFaceScore: detection.faceScore,
+                              actualGender: detection.gender,
+                              actualAgeGroup: detection.ageGroup,
+                              isFalsePositive: false,
+                            });
+                          }
+                          setLabelingFace(null);
+                        }}
+                      >
+                        <Check className="h-3 w-3 mr-1" />
+                        Correct
+                      </Button>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="w-full h-5 text-[10px]"
+                      onClick={() => setLabelingFace(null)}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
         
         {!isActive && (

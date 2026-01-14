@@ -38,6 +38,8 @@ interface CaptureSettings {
   enableHairHeuristics: boolean;
   /** Require face texture variation (filters walls/uniform surfaces). */
   requireFaceTexture: boolean;
+  /** Use dual model (TinyFace + SSD) for video files. */
+  useDualModelForVideo: boolean;
 }
 
 interface SettingsPanelProps {
@@ -251,6 +253,25 @@ export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps
               type="checkbox"
               checked={localSettings.requireFaceTexture}
               onChange={(e) => setLocalSettings(prev => ({ ...prev, requireFaceTexture: e.target.checked }))}
+            className="h-4 w-4 rounded border-gray-300"
+          />
+        </div>
+
+          {/* Dual Model for Video Toggle */}
+          <div className="flex items-center justify-between p-3 rounded-lg bg-primary/5 border border-primary/20">
+            <div className="space-y-0.5">
+              <Label className="flex items-center gap-2">
+                <Zap className="h-4 w-4 text-primary" />
+                Dual Model (Video)
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Use TinyFace + SSD MobileNet for video files (more accurate)
+              </p>
+            </div>
+            <input
+              type="checkbox"
+              checked={localSettings.useDualModelForVideo}
+              onChange={(e) => setLocalSettings(prev => ({ ...prev, useDualModelForVideo: e.target.checked }))}
               className="h-4 w-4 rounded border-gray-300"
             />
           </div>
