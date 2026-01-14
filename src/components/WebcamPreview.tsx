@@ -258,8 +258,9 @@ export const WebcamPreview = ({
       ctx.fillStyle = bgColor;
       ctx.fillRect(scaledX, scaledY, scaledWidth, scaledHeight);
 
-      // Draw label background
-      const label = `${detection.gender === 'male' ? '♂' : '♀'} ${detection.ageGroup} ${(detection.confidence * 100).toFixed(0)}%`;
+      // Draw label background - show gender text explicitly
+      const genderText = detection.gender === 'male' ? '♂ Male' : '♀ Female';
+      const label = `${genderText} | ${detection.ageGroup} ${(detection.confidence * 100).toFixed(0)}%`;
       ctx.font = 'bold 12px sans-serif';
       const labelWidth = ctx.measureText(label).width + 10;
       const labelHeight = 20;
@@ -417,7 +418,7 @@ export const WebcamPreview = ({
             style={{ zIndex: 1 }}
           />
           
-          {/* Single-Save Labeling UI - positioned above canvas */}
+          {/* Single-Save Labeling UI - smart positioning above/below face */}
           {labelingMode && isActive && detections.map((detection, idx) => {
             if (!detection.boundingBox || !videoRef.current) return null;
             
@@ -438,15 +439,32 @@ export const WebcamPreview = ({
             const isLabeledInSession = labeledFacesInSession.has(faceId);
             const justSaved = recentlySaved.has(faceId);
             
+            // Smart positioning: show above face if not enough space below
+            const containerHeight = rect.height;
+            const formHeight = isLabeling ? 260 : 36; // Form is ~260px, button is ~36px
+            const spaceBelow = containerHeight - (scaledY + scaledHeight + 4);
+            const showAbove = spaceBelow < formHeight && scaledY > formHeight;
+            
+            // Calculate position
+            const topPosition = showAbove 
+              ? scaledY - formHeight - 4 
+              : scaledY + scaledHeight + 4;
+            
+            // Clamp horizontal position to stay within bounds
+            const maxLeft = rect.width - Math.max(scaledWidth, 200);
+            const clampedLeft = Math.max(0, Math.min(scaledX, maxLeft));
+            
             return (
               <div
                 key={faceId}
                 className="absolute pointer-events-auto"
                 style={{
-                  left: `${scaledX}px`,
-                  top: `${scaledY + scaledHeight + 4}px`,
-                  width: `${Math.max(scaledWidth, 180)}px`,
-                  zIndex: 10,
+                  left: `${clampedLeft}px`,
+                  top: `${Math.max(0, topPosition)}px`,
+                  width: `${Math.max(scaledWidth, 200)}px`,
+                  maxHeight: `${Math.min(formHeight + 10, containerHeight - 10)}px`,
+                  zIndex: 20,
+                  overflowY: 'auto',
                 }}
               >
                 {!isLabeling ? (

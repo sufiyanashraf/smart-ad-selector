@@ -163,6 +163,9 @@ const SmartAdsSystem = () => {
     {
       sourceMode: inputMode,
       cctvMode,
+      // Reactively pass dual model and YOLO settings for video mode
+      useDualModel: captureSettings.useDualModelForVideo && (inputMode === 'video' || inputMode === 'screen'),
+      useYolo: captureSettings.enableYoloForVideo && (inputMode === 'video' || inputMode === 'screen'),
       config: {
         debugMode,
         // Hard floor to reduce false positives in video/CCTV
@@ -324,7 +327,17 @@ const SmartAdsSystem = () => {
           
           if (detection.confidence >= MIN_VOTE_CONFIDENCE) {
             const voteWeight = detection.confidence * Math.min(detection.faceScore, 1);
-            newGenderVotes[detection.gender] += voteWeight;
+            
+            // Apply female boost for uncertain gender classifications to counter male bias
+            const isUncertainGender = detection.confidence < 0.65;
+            const femaleBoost = isUncertainGender ? captureSettings.femaleBoostFactor : 0;
+            
+            if (detection.gender === 'male') {
+              newGenderVotes.male += voteWeight;
+            } else {
+              // Boost female votes when uncertain
+              newGenderVotes.female += voteWeight * (1 + femaleBoost);
+            }
             newAgeVotes[detection.ageGroup] += voteWeight;
           }
           
@@ -408,7 +421,16 @@ const SmartAdsSystem = () => {
         
         if (detection.confidence >= MIN_VOTE_CONFIDENCE) {
           const voteWeight = detection.confidence * Math.min(detection.faceScore, 1);
-          initialGenderVotes[detection.gender] = voteWeight;
+          
+          // Apply female boost for uncertain classifications
+          const isUncertainGender = detection.confidence < 0.65;
+          const femaleBoost = isUncertainGender ? captureSettings.femaleBoostFactor : 0;
+          
+          if (detection.gender === 'male') {
+            initialGenderVotes.male = voteWeight;
+          } else {
+            initialGenderVotes.female = voteWeight * (1 + femaleBoost);
+          }
           initialAgeVotes[detection.ageGroup] = voteWeight;
         }
         

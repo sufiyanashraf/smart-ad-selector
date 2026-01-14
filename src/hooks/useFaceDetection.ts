@@ -17,6 +17,10 @@ type FaceDetectionOptions = {
   sourceMode?: SourceMode;
   cctvMode?: boolean;
   config?: Partial<CCTVDetectionConfig>;
+  /** Force use of SSD Mobilenet for dual-model mode */
+  useDualModel?: boolean;
+  /** Enable YOLO detection if available */
+  useYolo?: boolean;
 };
 
 interface DetectionStats {
@@ -117,18 +121,25 @@ export const useFaceDetection = (
     loadModels();
   }, []);
 
-  // Get effective config based on mode
+  // Get effective config based on mode - now reactive to options
   const getConfig = useCallback((): CCTVDetectionConfig => {
     const sourceMode = options?.sourceMode ?? 'webcam';
     const cctvMode = options?.cctvMode ?? sourceMode === 'video';
     const baseConfig = cctvMode ? DEFAULT_CCTV_CONFIG : DEFAULT_WEBCAM_CONFIG;
     
+    // Override detector based on dual model setting
+    let detector = baseConfig.detector;
+    if (options?.useDualModel && ssdLoaded) {
+      detector = 'dual';
+    }
+    
     return {
       ...baseConfig,
       sensitivity,
+      detector,
       ...options?.config,
     };
-  }, [sensitivity, options]);
+  }, [sensitivity, options, ssdLoaded]);
 
   // Merge detections and deduplicate by position using IoU + containment
   const mergeDetections = useCallback((
