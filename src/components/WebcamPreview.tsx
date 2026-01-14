@@ -1,5 +1,5 @@
 import { RefObject, useRef, useEffect, useState, useMemo } from 'react';
-import { Camera, CameraOff, AlertCircle, Monitor, FileVideo, ZoomIn, ZoomOut, Maximize2, Check, X, Tag } from 'lucide-react';
+import { Camera, CameraOff, AlertCircle, Monitor, FileVideo, ZoomIn, ZoomOut, Maximize2, Check, X, Tag, Save } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DetectionResult } from '@/types/ad';
 import { DetectionDebugInfo, TrackedFace } from '@/types/detection';
@@ -7,6 +7,9 @@ import { GroundTruthEntry } from '@/types/evaluation';
 import { InputSourceMode } from '@/hooks/useWebcam';
 import { Button } from '@/components/ui/button';
 import { DebugOverlay } from '@/components/DebugOverlay';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 
 interface WebcamPreviewProps {
   videoRef: RefObject<HTMLVideoElement>;
@@ -25,6 +28,9 @@ interface WebcamPreviewProps {
   /** Callback when user labels a detection */
   onLabelDetection?: (entry: GroundTruthEntry) => void;
 }
+
+// Track which faces have been labeled in this session
+const labeledFacesInSession = new Set<string>();
 
 export const WebcamPreview = ({
   videoRef,
@@ -45,6 +51,14 @@ export const WebcamPreview = ({
   const [zoomMode, setZoomMode] = useState<'none' | 'auto' | 'manual'>('none');
   const [manualZoom, setManualZoom] = useState(1);
   const [labelingFace, setLabelingFace] = useState<string | null>(null);
+  
+  // Single-save labeling form state
+  const [formGender, setFormGender] = useState<'male' | 'female'>('male');
+  const [formAge, setFormAge] = useState<'kid' | 'young' | 'adult'>('adult');
+  const [formFalsePositive, setFormFalsePositive] = useState(false);
+  
+  // Track saved faces for visual feedback
+  const [recentlySaved, setRecentlySaved] = useState<Set<string>>(new Set());
 
   // Calculate zoom transform to focus on detected faces
   const zoomTransform = useMemo(() => {
@@ -117,6 +131,49 @@ export const WebcamPreview = ({
     }
   };
 
+  // Initialize form with detection values when opening labeling popup
+  const openLabelingForm = (faceId: string, detection: DetectionResult) => {
+    setLabelingFace(faceId);
+    setFormGender(detection.gender);
+    setFormAge(detection.ageGroup);
+    setFormFalsePositive(false);
+  };
+
+  // Handle save label
+  const handleSaveLabel = (detection: DetectionResult, idx: number) => {
+    if (!onLabelDetection || !detection.boundingBox) return;
+    
+    const faceId = detection.trackingId || `face_${idx}`;
+    
+    onLabelDetection({
+      id: `${Date.now()}_${idx}`,
+      timestamp: Date.now(),
+      boundingBox: detection.boundingBox,
+      detectedGender: detection.gender,
+      detectedAgeGroup: detection.ageGroup,
+      detectedConfidence: detection.confidence,
+      detectedFaceScore: detection.faceScore,
+      actualGender: formFalsePositive ? detection.gender : formGender,
+      actualAgeGroup: formFalsePositive ? detection.ageGroup : formAge,
+      isFalsePositive: formFalsePositive,
+    });
+    
+    // Track as labeled in session
+    labeledFacesInSession.add(faceId);
+    
+    // Show saved feedback
+    setRecentlySaved(prev => new Set([...prev, faceId]));
+    setTimeout(() => {
+      setRecentlySaved(prev => {
+        const next = new Set(prev);
+        next.delete(faceId);
+        return next;
+      });
+    }, 2000);
+    
+    setLabelingFace(null);
+  };
+
   // Draw bounding boxes on canvas
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -143,8 +200,12 @@ export const WebcamPreview = ({
     const scaleY = rect.height / videoHeight;
 
     // Draw bounding boxes for each detection
-    detections.forEach((detection) => {
+    detections.forEach((detection, idx) => {
       if (!detection.boundingBox) return;
+
+      const faceId = detection.trackingId || `face_${idx}`;
+      const isLabeledInSession = labeledFacesInSession.has(faceId);
+      const justSaved = recentlySaved.has(faceId);
 
       const { x, y, width, height } = detection.boundingBox;
       const scaledX = x * scaleX;
@@ -162,24 +223,35 @@ export const WebcamPreview = ({
         return v ? `hsl(${v} / ${alpha})` : fallback;
       };
 
-      // Determine color based on confidence
-      const isLowConfidence = detection.confidence < 0.75;
-      const isMedConfidence = detection.confidence >= 0.75 && detection.confidence < 0.85;
+      // Determine color based on confidence or labeled status
+      let boxColor: string;
+      let bgColor: string;
+      
+      if (justSaved) {
+        boxColor = 'hsl(142 71% 45%)'; // green for just saved
+        bgColor = 'hsl(142 71% 45% / 0.3)';
+      } else if (isLabeledInSession && labelingMode) {
+        boxColor = 'hsl(220 90% 60%)'; // blue for already labeled
+        bgColor = 'hsl(220 90% 60% / 0.2)';
+      } else {
+        const isLowConfidence = detection.confidence < 0.75;
+        const isMedConfidence = detection.confidence >= 0.75 && detection.confidence < 0.85;
 
-      const highColor = getHsl('--success', 'hsl(142 71% 45%)');
-      const midColor = getHsl('--primary', 'hsl(220 90% 60%)');
-      const lowColor = getHsl('--destructive', 'hsl(0 84% 60%)');
+        const highColor = getHsl('--success', 'hsl(142 71% 45%)');
+        const midColor = getHsl('--primary', 'hsl(220 90% 60%)');
+        const lowColor = getHsl('--destructive', 'hsl(0 84% 60%)');
 
-      const boxColor = isLowConfidence ? lowColor : isMedConfidence ? midColor : highColor;
-      const bgColor = isLowConfidence
-        ? getHslA('--destructive', 0.2, 'hsl(0 84% 60% / 0.2)')
-        : isMedConfidence
-          ? getHslA('--primary', 0.2, 'hsl(220 90% 60% / 0.2)')
-          : getHslA('--success', 0.2, 'hsl(142 71% 45% / 0.2)');
+        boxColor = isLowConfidence ? lowColor : isMedConfidence ? midColor : highColor;
+        bgColor = isLowConfidence
+          ? getHslA('--destructive', 0.2, 'hsl(0 84% 60% / 0.2)')
+          : isMedConfidence
+            ? getHslA('--primary', 0.2, 'hsl(220 90% 60% / 0.2)')
+            : getHslA('--success', 0.2, 'hsl(142 71% 45% / 0.2)');
+      }
 
       // Draw bounding box
       ctx.strokeStyle = boxColor;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = justSaved ? 3 : 2;
       ctx.strokeRect(scaledX, scaledY, scaledWidth, scaledHeight);
 
       // Draw semi-transparent fill
@@ -200,19 +272,18 @@ export const WebcamPreview = ({
       ctx.textBaseline = 'middle';
       ctx.fillText(label, scaledX + 5, scaledY - labelHeight / 2);
 
-      // Draw gender icon at bottom
-      const genderIcon = detection.gender === 'male' ? 'MALE' : 'FEMALE';
-      const ageGroup = detection.ageGroup.toUpperCase();
-      const bottomLabel = `${genderIcon} • ${ageGroup}`;
-
-      const bottomLabelWidth = ctx.measureText(bottomLabel).width + 10;
-      ctx.fillStyle = getHslA('--background', 0.7, 'hsl(0 0% 0% / 0.7)');
-      ctx.fillRect(scaledX, scaledY + scaledHeight, bottomLabelWidth, labelHeight);
-
-      ctx.fillStyle = boxColor;
-      ctx.fillText(bottomLabel, scaledX + 5, scaledY + scaledHeight + labelHeight / 2);
+      // Draw status indicator for labeled faces
+      if (justSaved) {
+        ctx.fillStyle = 'hsl(142 71% 45%)';
+        ctx.font = 'bold 14px sans-serif';
+        ctx.fillText('✓ SAVED', scaledX + 5, scaledY + scaledHeight + 15);
+      } else if (isLabeledInSession && labelingMode) {
+        ctx.fillStyle = 'hsl(220 90% 60%)';
+        ctx.font = '10px sans-serif';
+        ctx.fillText('labeled', scaledX + 5, scaledY + scaledHeight + 12);
+      }
     });
-  }, [detections, isActive, videoRef]);
+  }, [detections, isActive, videoRef, labelingMode, recentlySaved]);
 
   return (
     <div className="glass-card p-4 space-y-3">
@@ -223,6 +294,11 @@ export const WebcamPreview = ({
           {detections.length > 0 && (
             <span className="ml-2 px-2 py-0.5 bg-primary/20 text-primary text-xs rounded-full">
               {detections.length} face{detections.length !== 1 ? 's' : ''}
+            </span>
+          )}
+          {labelingMode && (
+            <span className="ml-1 px-2 py-0.5 bg-yellow-500/20 text-yellow-600 text-xs rounded-full">
+              Labeling
             </span>
           )}
         </h3>
@@ -340,7 +416,7 @@ export const WebcamPreview = ({
             className="absolute inset-0 w-full h-full pointer-events-none"
           />
           
-          {/* Labeling buttons overlay */}
+          {/* Single-Save Labeling UI */}
           {labelingMode && isActive && detections.map((detection, idx) => {
             if (!detection.boundingBox || !videoRef.current) return null;
             
@@ -358,6 +434,8 @@ export const WebcamPreview = ({
             const faceId = detection.trackingId || `face_${idx}`;
             
             const isLabeling = labelingFace === faceId;
+            const isLabeledInSession = labeledFacesInSession.has(faceId);
+            const justSaved = recentlySaved.has(faceId);
             
             return (
               <div
@@ -366,162 +444,129 @@ export const WebcamPreview = ({
                 style={{
                   left: `${scaledX}px`,
                   top: `${scaledY + scaledHeight + 4}px`,
-                  width: `${Math.max(scaledWidth, 120)}px`,
+                  width: `${Math.max(scaledWidth, 180)}px`,
                 }}
               >
                 {!isLabeling ? (
                   <Button
                     size="sm"
-                    variant="secondary"
-                    className="w-full h-6 text-[10px] gap-1 opacity-90 hover:opacity-100"
-                    onClick={() => setLabelingFace(faceId)}
+                    variant={justSaved ? 'default' : isLabeledInSession ? 'secondary' : 'outline'}
+                    className={cn(
+                      "w-full h-7 text-[11px] gap-1.5",
+                      justSaved && "bg-green-600 hover:bg-green-700",
+                      isLabeledInSession && !justSaved && "opacity-70"
+                    )}
+                    onClick={() => openLabelingForm(faceId, detection)}
+                    disabled={justSaved}
                   >
-                    <Tag className="h-3 w-3" />
-                    Label
+                    {justSaved ? (
+                      <>
+                        <Check className="h-3 w-3" />
+                        Saved!
+                      </>
+                    ) : isLabeledInSession ? (
+                      <>
+                        <Tag className="h-3 w-3" />
+                        Re-label
+                      </>
+                    ) : (
+                      <>
+                        <Tag className="h-3 w-3" />
+                        Label This Face
+                      </>
+                    )}
                   </Button>
                 ) : (
-                  <div className="bg-background/95 border rounded-md p-2 space-y-2 shadow-lg">
-                    <div className="text-[10px] font-medium text-center">Correct Gender?</div>
-                    <div className="flex gap-1">
-                      <Button
-                        size="sm"
-                        variant={detection.gender === 'male' ? 'default' : 'outline'}
-                        className="flex-1 h-6 text-[10px]"
-                        onClick={() => {
-                          if (onLabelDetection && detection.boundingBox) {
-                            onLabelDetection({
-                              id: `${Date.now()}_${idx}`,
-                              timestamp: Date.now(),
-                              boundingBox: detection.boundingBox,
-                              detectedGender: detection.gender,
-                              detectedAgeGroup: detection.ageGroup,
-                              detectedConfidence: detection.confidence,
-                              detectedFaceScore: detection.faceScore,
-                              actualGender: 'male',
-                              actualAgeGroup: detection.ageGroup,
-                              isFalsePositive: false,
-                            });
-                          }
-                          setLabelingFace(null);
-                        }}
-                      >
-                        ♂ Male
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant={detection.gender === 'female' ? 'default' : 'outline'}
-                        className="flex-1 h-6 text-[10px]"
-                        onClick={() => {
-                          if (onLabelDetection && detection.boundingBox) {
-                            onLabelDetection({
-                              id: `${Date.now()}_${idx}`,
-                              timestamp: Date.now(),
-                              boundingBox: detection.boundingBox,
-                              detectedGender: detection.gender,
-                              detectedAgeGroup: detection.ageGroup,
-                              detectedConfidence: detection.confidence,
-                              detectedFaceScore: detection.faceScore,
-                              actualGender: 'female',
-                              actualAgeGroup: detection.ageGroup,
-                              isFalsePositive: false,
-                            });
-                          }
-                          setLabelingFace(null);
-                        }}
-                      >
-                        ♀ Female
-                      </Button>
+                  <div className="bg-background/98 border-2 border-primary rounded-lg p-3 space-y-3 shadow-xl">
+                    <div className="text-xs font-semibold text-center border-b pb-2">
+                      Label Ground Truth
                     </div>
-                    <div className="text-[10px] font-medium text-center">Correct Age?</div>
-                    <div className="flex gap-1">
-                      {(['kid', 'young', 'adult'] as const).map(age => (
-                        <Button
-                          key={age}
-                          size="sm"
-                          variant={detection.ageGroup === age ? 'default' : 'outline'}
-                          className="flex-1 h-6 text-[10px] px-1"
-                          onClick={() => {
-                            if (onLabelDetection && detection.boundingBox) {
-                              onLabelDetection({
-                                id: `${Date.now()}_${idx}`,
-                                timestamp: Date.now(),
-                                boundingBox: detection.boundingBox,
-                                detectedGender: detection.gender,
-                                detectedAgeGroup: detection.ageGroup,
-                                detectedConfidence: detection.confidence,
-                                detectedFaceScore: detection.faceScore,
-                                actualGender: detection.gender,
-                                actualAgeGroup: age,
-                                isFalsePositive: false,
-                              });
-                            }
-                            setLabelingFace(null);
-                          }}
-                        >
-                          {age}
-                        </Button>
-                      ))}
+                    
+                    {/* Gender Selection */}
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] font-medium text-muted-foreground">Gender</Label>
+                      <RadioGroup 
+                        value={formGender} 
+                        onValueChange={(v) => setFormGender(v as 'male' | 'female')}
+                        className="flex gap-2"
+                        disabled={formFalsePositive}
+                      >
+                        <div className="flex items-center space-x-1.5 flex-1">
+                          <RadioGroupItem value="male" id={`gender-male-${faceId}`} className="h-3 w-3" />
+                          <Label htmlFor={`gender-male-${faceId}`} className="text-[11px] cursor-pointer">
+                            ♂ Male
+                          </Label>
+                        </div>
+                        <div className="flex items-center space-x-1.5 flex-1">
+                          <RadioGroupItem value="female" id={`gender-female-${faceId}`} className="h-3 w-3" />
+                          <Label htmlFor={`gender-female-${faceId}`} className="text-[11px] cursor-pointer">
+                            ♀ Female
+                          </Label>
+                        </div>
+                      </RadioGroup>
                     </div>
-                    <div className="flex gap-1">
+                    
+                    {/* Age Selection */}
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] font-medium text-muted-foreground">Age Group</Label>
+                      <RadioGroup 
+                        value={formAge} 
+                        onValueChange={(v) => setFormAge(v as 'kid' | 'young' | 'adult')}
+                        className="flex gap-1"
+                        disabled={formFalsePositive}
+                      >
+                        {(['kid', 'young', 'adult'] as const).map(age => (
+                          <div key={age} className="flex items-center space-x-1 flex-1">
+                            <RadioGroupItem value={age} id={`age-${age}-${faceId}`} className="h-3 w-3" />
+                            <Label htmlFor={`age-${age}-${faceId}`} className="text-[10px] cursor-pointer capitalize">
+                              {age}
+                            </Label>
+                          </div>
+                        ))}
+                      </RadioGroup>
+                    </div>
+                    
+                    {/* False Positive Checkbox */}
+                    <div className="flex items-center space-x-2 pt-1 border-t">
+                      <Checkbox 
+                        id={`fp-${faceId}`}
+                        checked={formFalsePositive}
+                        onCheckedChange={(checked) => setFormFalsePositive(!!checked)}
+                        className="h-3.5 w-3.5"
+                      />
+                      <Label 
+                        htmlFor={`fp-${faceId}`} 
+                        className="text-[11px] text-destructive font-medium cursor-pointer"
+                      >
+                        Not a real face (false positive)
+                      </Label>
+                    </div>
+                    
+                    {/* Action Buttons */}
+                    <div className="flex gap-2 pt-2">
                       <Button
                         size="sm"
-                        variant="destructive"
-                        className="flex-1 h-6 text-[10px]"
-                        onClick={() => {
-                          if (onLabelDetection && detection.boundingBox) {
-                            onLabelDetection({
-                              id: `${Date.now()}_${idx}`,
-                              timestamp: Date.now(),
-                              boundingBox: detection.boundingBox,
-                              detectedGender: detection.gender,
-                              detectedAgeGroup: detection.ageGroup,
-                              detectedConfidence: detection.confidence,
-                              detectedFaceScore: detection.faceScore,
-                              actualGender: detection.gender,
-                              actualAgeGroup: detection.ageGroup,
-                              isFalsePositive: true,
-                            });
-                          }
-                          setLabelingFace(null);
-                        }}
+                        variant="ghost"
+                        className="flex-1 h-7 text-[11px]"
+                        onClick={() => setLabelingFace(null)}
                       >
-                        <X className="h-3 w-3 mr-1" />
-                        Not Face
+                        Cancel
                       </Button>
                       <Button
                         size="sm"
                         variant="default"
-                        className="flex-1 h-6 text-[10px] bg-green-600 hover:bg-green-700"
-                        onClick={() => {
-                          if (onLabelDetection && detection.boundingBox) {
-                            onLabelDetection({
-                              id: `${Date.now()}_${idx}`,
-                              timestamp: Date.now(),
-                              boundingBox: detection.boundingBox,
-                              detectedGender: detection.gender,
-                              detectedAgeGroup: detection.ageGroup,
-                              detectedConfidence: detection.confidence,
-                              detectedFaceScore: detection.faceScore,
-                              actualGender: detection.gender,
-                              actualAgeGroup: detection.ageGroup,
-                              isFalsePositive: false,
-                            });
-                          }
-                          setLabelingFace(null);
-                        }}
+                        className="flex-1 h-7 text-[11px] bg-green-600 hover:bg-green-700"
+                        onClick={() => handleSaveLabel(detection, idx)}
                       >
-                        <Check className="h-3 w-3 mr-1" />
-                        Correct
+                        <Save className="h-3 w-3 mr-1" />
+                        Save
                       </Button>
                     </div>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="w-full h-5 text-[10px]"
-                      onClick={() => setLabelingFace(null)}
-                    >
-                      Cancel
-                    </Button>
+                    
+                    {/* Detection info */}
+                    <div className="text-[9px] text-muted-foreground text-center pt-1 border-t">
+                      Detected: {detection.gender}/{detection.ageGroup} ({(detection.confidence * 100).toFixed(0)}%)
+                    </div>
                   </div>
                 )}
               </div>
@@ -568,11 +613,13 @@ export const WebcamPreview = ({
       </div>
 
       <p className="text-xs text-muted-foreground text-center">
-        {isActive && detections.length > 0 
-          ? `Detecting ${detections.length} person(s) with bounding boxes`
-          : inputMode === 'webcam' 
-            ? 'Use dropdown to select webcam, video file, or screen capture'
-            : `${inputMode === 'video' ? 'Video file' : 'Screen capture'} mode - select source from dropdown`
+        {labelingMode 
+          ? 'Click "Label This Face" to add ground truth data for evaluation'
+          : isActive && detections.length > 0 
+            ? `Detecting ${detections.length} person(s) with bounding boxes`
+            : inputMode === 'webcam' 
+              ? 'Use dropdown to select webcam, video file, or screen capture'
+              : `${inputMode === 'video' ? 'Video file' : 'Screen capture'} mode - select source from dropdown`
         }
       </p>
     </div>
