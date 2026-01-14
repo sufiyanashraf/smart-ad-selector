@@ -28,6 +28,10 @@ interface CaptureSettings {
   detectionSensitivity: number;
   detectionMode: DetectionMode;
   videoQuality: VideoQuality;
+  /** Hard floor for face-score to reduce false positives (walls/sky). */
+  falsePositiveMinScore: number;
+  /** Minimum gender/age confidence to be counted in demographics + session summary. */
+  minDemographicConfidence: number;
 }
 
 interface SettingsPanelProps {
@@ -142,6 +146,48 @@ export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps
               onValueChange={handleSensitivityChange}
               min={0.2} max={0.6} step={0.05}
             />
+          </div>
+
+          {/* False Positive Guard */}
+          <div className="space-y-2 p-3 rounded-lg bg-muted/50 border border-border">
+            <div className="flex items-center justify-between">
+              <Label className="flex items-center gap-2">
+                <Eye className="h-4 w-4 text-muted-foreground" />
+                False Positive Guard
+              </Label>
+              <span className="text-sm font-bold text-muted-foreground">
+                {localSettings.falsePositiveMinScore.toFixed(2)}
+              </span>
+            </div>
+            <Slider
+              value={[localSettings.falsePositiveMinScore]}
+              onValueChange={(v) => setLocalSettings(prev => ({ ...prev, falsePositiveMinScore: v[0] }))}
+              min={0.10} max={0.35} step={0.02}
+            />
+            <p className="text-xs text-muted-foreground">
+              Higher = fewer wall/sky detections, but may miss small/blurred faces.
+            </p>
+          </div>
+
+          {/* Demographic Confidence */}
+          <div className="space-y-2 p-3 rounded-lg bg-accent/10 border border-accent/20">
+            <div className="flex items-center justify-between">
+              <Label className="flex items-center gap-2">
+                <Eye className="h-4 w-4 text-accent" />
+                Demographic Confidence
+              </Label>
+              <span className="text-sm font-bold text-accent">
+                {(localSettings.minDemographicConfidence * 100).toFixed(0)}%
+              </span>
+            </div>
+            <Slider
+              value={[localSettings.minDemographicConfidence]}
+              onValueChange={(v) => setLocalSettings(prev => ({ ...prev, minDemographicConfidence: v[0] }))}
+              min={0.55} max={0.90} step={0.05}
+            />
+            <p className="text-xs text-muted-foreground">
+              Detections below this confidence won’t be counted as male/female/kid/young/adult.
+            </p>
           </div>
 
           {/* Capture Window */}

@@ -57,24 +57,26 @@ export interface CCTVDetectionConfig {
   // Detection settings
   detector: 'tiny' | 'ssd' | 'dual';
   sensitivity: number;        // 0.2-0.6 (lower = more sensitive)
-  
+
   // Preprocessing
   preprocessing: PreprocessingOptions;
   upscale: number;           // 1-2x
-  
+
   // Filtering
   roi: ROIConfig;
   minFaceScore: number;      // 0.2-0.6
+  /** Optional hard floor for the detector score to suppress false positives. */
+  hardMinFaceScore?: number;
   minFaceSizePx: number;     // 20-60
   minFaceSizePercent: number; // 0.5-5% of frame
   aspectRatioMin: number;    // 0.5
   aspectRatioMax: number;    // 2.0
-  
+
   // Tracking
   minConsecutiveFrames: number; // 2-5
   holdFrames: number;           // 2-8
   maxVelocityPx: number;        // Max movement between frames
-  
+
   // Debug
   debugMode: boolean;
 }
@@ -168,12 +170,44 @@ export function toDetectionResult(tracked: TrackedFace): DetectionResult {
 }
 
 // Helper to determine stable gender/age from votes
-export function getStableGender(votes: { male: number; female: number }): 'male' | 'female' {
+//
+// NOTE: We intentionally avoid defaulting to 'male'/'young' when evidence is weak,
+// because that biases results in low-quality CCTV.
+export function getStableGender(
+  votes: { male: number; female: number },
+  previous: 'male' | 'female' = 'male',
+  opts: { minTotal?: number; minMargin?: number } = {}
+): 'male' | 'female' {
+  const total = votes.male + votes.female;
+  const minTotal = opts.minTotal ?? 0.9;
+  const minMargin = opts.minMargin ?? 0.25;
+
+  if (total < minTotal) return previous;
+
+  const diff = Math.abs(votes.female - votes.male);
+  if (diff < minMargin) return previous;
+
   return votes.female > votes.male ? 'female' : 'male';
 }
 
-export function getStableAgeGroup(votes: { kid: number; young: number; adult: number }): 'kid' | 'young' | 'adult' {
-  if (votes.kid >= votes.young && votes.kid >= votes.adult) return 'kid';
-  if (votes.adult > votes.young && votes.adult > votes.kid) return 'adult';
-  return 'young';
+export function getStableAgeGroup(
+  votes: { kid: number; young: number; adult: number },
+  previous: 'kid' | 'young' | 'adult' = 'young',
+  opts: { minTotal?: number; minMargin?: number } = {}
+): 'kid' | 'young' | 'adult' {
+  const total = votes.kid + votes.young + votes.adult;
+  const minTotal = opts.minTotal ?? 0.9;
+  const minMargin = opts.minMargin ?? 0.25;
+
+  if (total < minTotal) return previous;
+
+  // winner-take-most with margin; otherwise keep previous
+  const entries = [
+    { k: 'kid' as const, v: votes.kid },
+    { k: 'young' as const, v: votes.young },
+    { k: 'adult' as const, v: votes.adult },
+  ].sort((a, b) => b.v - a.v);
+
+  if (entries[0].v - entries[1].v < minMargin) return previous;
+  return entries[0].k;
 }

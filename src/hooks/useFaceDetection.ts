@@ -286,26 +286,31 @@ export const useFaceDetection = (
     
     // Use the LOWER of minFaceScore and sensitivity to avoid filtering too strictly
     const effectiveMinScore = Math.min(config.minFaceScore, config.sensitivity);
-    
+    // Optional hard floor to reduce false positives (walls/sky)
+    const hardMinScore = config.hardMinFaceScore ?? 0;
+    const requiredMinScore = Math.max(effectiveMinScore, hardMinScore);
+
     if (debugMode && rawCount > 0) {
-      console.log(`[Filter] Raw: ${rawCount}, minScore: ${effectiveMinScore.toFixed(2)}, minPx: ${config.minFaceSizePx}, minPct: ${config.minFaceSizePercent}%`);
+      console.log(
+        `[Filter] Raw: ${rawCount}, minScore: ${requiredMinScore.toFixed(2)} (soft=${effectiveMinScore.toFixed(2)} hard=${hardMinScore.toFixed(2)}), minPx: ${config.minFaceSizePx}, minPct: ${config.minFaceSizePercent}%`
+      );
     }
-    
+
     const results = detections
       .filter(detection => {
         const det = detection.detection ?? detection;
         const box = det.box;
         const faceScore = det.score;
-        
+
         // Scale back bounding box
         const faceWidth = box.width / scaleBack;
         const faceHeight = box.height / scaleBack;
         const faceX = box.x / scaleBack + (roiOffset?.x ?? 0);
         const faceY = box.y / scaleBack + (roiOffset?.y ?? 0);
-        
-        // Filter by face detection score (use effective minimum)
-        if (faceScore < effectiveMinScore) {
-          if (debugMode) console.log(`[Filter] ❌ Low score: ${faceScore.toFixed(2)} < ${effectiveMinScore.toFixed(2)}`);
+
+        // Filter by face detection score
+        if (faceScore < requiredMinScore) {
+          if (debugMode) console.log(`[Filter] ❌ Low score: ${faceScore.toFixed(2)} < ${requiredMinScore.toFixed(2)}`);
           return false;
         }
         

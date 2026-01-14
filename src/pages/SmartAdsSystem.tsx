@@ -35,6 +35,8 @@ const SmartAdsSystem = () => {
     detectionSensitivity: 0.35,
     detectionMode: 'accurate',
     videoQuality: 'lowQuality',
+    falsePositiveMinScore: 0.18,
+    minDemographicConfidence: 0.75,
   });
 
   // CCTV mode settings
@@ -149,12 +151,14 @@ const SmartAdsSystem = () => {
     getDebugInfo 
   } = useFaceDetection(
     captureSettings.detectionSensitivity,
-    { 
+    {
       sourceMode: inputMode,
       cctvMode,
       config: {
         debugMode,
-      }
+        // Hard floor to reduce false positives in video/CCTV
+        hardMinFaceScore: captureSettings.falsePositiveMinScore,
+      },
     }
   );
   
@@ -315,9 +319,9 @@ const SmartAdsSystem = () => {
             newAgeVotes[detection.ageGroup] += voteWeight;
           }
           
-          // Calculate stable gender/age from votes
-          const stableGender = getStableGender(newGenderVotes);
-          const stableAgeGroup = getStableAgeGroup(newAgeVotes);
+          // Calculate stable gender/age from votes (avoid default-male bias on weak evidence)
+          const stableGender = getStableGender(newGenderVotes, trackedFace.stableGender);
+          const stableAgeGroup = getStableAgeGroup(newAgeVotes, trackedFace.stableAgeGroup);
           
           tracked.set(id, {
             ...trackedFace,
@@ -359,8 +363,8 @@ const SmartAdsSystem = () => {
               existing.seenFrames++;
               existing.bestFaceScore = Math.max(existing.bestFaceScore, detection.faceScore);
               existing.bestConfidence = Math.max(existing.bestConfidence, detection.confidence);
-              existing.finalGender = getStableGender(existing.genderVotes);
-              existing.finalAgeGroup = getStableAgeGroup(existing.ageVotes);
+              existing.finalGender = getStableGender(existing.genderVotes, existing.finalGender);
+              existing.finalAgeGroup = getStableAgeGroup(existing.ageVotes, existing.finalAgeGroup);
             } else {
               // New viewer in session
               session.viewers.set(id, {
@@ -446,13 +450,15 @@ const SmartAdsSystem = () => {
       setCurrentViewers(stableViewers);
       
       if (stableViewers.length > 0) {
-        // Calculate demographics from stable detections (using stabilized gender/age)
+        // Calculate demographics from stable detections, but only COUNT confident demographics
+        const confident = stableViewers.filter(d => d.confidence >= captureSettings.minDemographicConfidence);
+
         const newDemographics: DemographicCounts = {
-          male: stableViewers.filter(d => d.gender === 'male').length,
-          female: stableViewers.filter(d => d.gender === 'female').length,
-          kid: stableViewers.filter(d => d.ageGroup === 'kid').length,
-          young: stableViewers.filter(d => d.ageGroup === 'young').length,
-          adult: stableViewers.filter(d => d.ageGroup === 'adult').length,
+          male: confident.filter(d => d.gender === 'male').length,
+          female: confident.filter(d => d.gender === 'female').length,
+          kid: confident.filter(d => d.ageGroup === 'kid').length,
+          young: confident.filter(d => d.ageGroup === 'young').length,
+          adult: confident.filter(d => d.ageGroup === 'adult').length,
         };
         setDemographics(newDemographics);
         lastDemographicsRef.current = newDemographics;
@@ -620,9 +626,11 @@ const SmartAdsSystem = () => {
         const session = captureSessionRef.current;
         
         // Filter viewers who were seen in enough frames (reduces false positives)
+        // and only count those with at least one confident demographic classification.
         const stableViewers = Array.from(session.viewers.values())
-          .filter(v => v.seenFrames >= MIN_FRAMES_FOR_SESSION);
-        
+          .filter(v => v.seenFrames >= MIN_FRAMES_FOR_SESSION)
+          .filter(v => v.bestConfidence >= captureSettings.minDemographicConfidence);
+
         // Calculate demographics from session summary (unique viewers, not per-frame counts)
         const sessionDemographics: DemographicCounts = {
           male: stableViewers.filter(v => v.finalGender === 'male').length,
