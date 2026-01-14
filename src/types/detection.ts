@@ -33,6 +33,10 @@ export interface DetectionDebugInfo {
   upscaled: boolean;
   frameSize: { width: number; height: number };
   roiActive: boolean;
+  // Hybrid detection additions
+  yoloActive?: boolean;
+  yoloDetections?: number;
+  hybridMode?: 'fast' | 'accurate' | 'max';
 }
 
 export interface CCTVDetectionConfig {
@@ -92,6 +96,21 @@ export const DEFAULT_WEBCAM_CONFIG: CCTVDetectionConfig = {
   minConsecutiveFrames: 1,
   holdFrames: 2,
   maxVelocityPx: 200,
+  debugMode: false,
+};
+
+// Hybrid detection configuration (YOLO + face-api.js)
+export interface HybridDetectionConfig {
+  mode: 'fast' | 'accurate' | 'max';
+  sensitivity: number;
+  preprocessing: PreprocessingOptions;
+  debugMode: boolean;
+}
+
+export const DEFAULT_HYBRID_CONFIG: HybridDetectionConfig = {
+  mode: 'accurate',
+  sensitivity: 0.3,
+  preprocessing: { gamma: 1.3, contrast: 1.4, sharpen: 0.4, denoise: true },
   debugMode: false,
 };
 

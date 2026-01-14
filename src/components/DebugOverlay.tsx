@@ -81,6 +81,21 @@ export const DebugOverlay = ({ debug, trackedFaces, show }: DebugOverlayProps) =
           <span className="px-2 py-1 bg-muted rounded">
             Pass {debug.passUsed}
           </span>
+          {debug.yoloActive && (
+            <span className="px-2 py-1 bg-green-500/20 rounded text-green-400 font-medium">
+              YOLO ✓
+            </span>
+          )}
+          {debug.yoloDetections !== undefined && debug.yoloDetections > 0 && (
+            <span className="px-2 py-1 bg-green-500/20 rounded text-green-400">
+              YOLO: {debug.yoloDetections}
+            </span>
+          )}
+          {debug.hybridMode && (
+            <span className="px-2 py-1 bg-accent/20 rounded text-accent font-medium">
+              {debug.hybridMode.toUpperCase()}
+            </span>
+          )}
           {debug.preprocessing && (
             <span className="px-2 py-1 bg-blue-500/20 rounded text-blue-400">
               PREPROC
