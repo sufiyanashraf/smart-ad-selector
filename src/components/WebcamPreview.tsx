@@ -229,15 +229,22 @@ export const WebcamPreview = ({
       let boxColor: string;
       let bgColor: string;
       
+      // Use isUserCorrected to show 100% confidence
+      const displayConfidence = (detection as any).isUserCorrected ? 1.0 : detection.confidence;
+      
       if (justSaved) {
         boxColor = 'hsl(142 71% 45%)'; // green for just saved
         bgColor = 'hsl(142 71% 45% / 0.3)';
+      } else if ((detection as any).isUserCorrected) {
+        // Labeled faces always show green with 100%
+        boxColor = 'hsl(142 71% 45%)'; // green for labeled
+        bgColor = 'hsl(142 71% 45% / 0.2)';
       } else if (isLabeledInSession && labelingMode) {
         boxColor = 'hsl(220 90% 60%)'; // blue for already labeled
         bgColor = 'hsl(220 90% 60% / 0.2)';
       } else {
-        const isLowConfidence = detection.confidence < 0.75;
-        const isMedConfidence = detection.confidence >= 0.75 && detection.confidence < 0.85;
+        const isLowConfidence = displayConfidence < 0.75;
+        const isMedConfidence = displayConfidence >= 0.75 && displayConfidence < 0.85;
 
         const highColor = getHsl('--success', 'hsl(142 71% 45%)');
         const midColor = getHsl('--primary', 'hsl(220 90% 60%)');
@@ -260,9 +267,9 @@ export const WebcamPreview = ({
       ctx.fillStyle = bgColor;
       ctx.fillRect(scaledX, scaledY, scaledWidth, scaledHeight);
 
-      // Draw label background - show gender text explicitly
+      // Draw label background - show gender text explicitly, use displayConfidence for labeled faces
       const genderText = detection.gender === 'male' ? '♂ Male' : '♀ Female';
-      const label = `${genderText} | ${detection.ageGroup} ${(detection.confidence * 100).toFixed(0)}%`;
+      const label = `${genderText} | ${detection.ageGroup} ${(displayConfidence * 100).toFixed(0)}%`;
       ctx.font = 'bold 12px sans-serif';
       const labelWidth = ctx.measureText(label).width + 10;
       const labelHeight = 20;

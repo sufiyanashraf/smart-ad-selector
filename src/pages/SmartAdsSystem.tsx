@@ -149,6 +149,10 @@ const SmartAdsSystem = () => {
     stopWebcam 
   } = useWebcam();
   
+  // ALWAYS: dual mode for video/screen, tiny-only for webcam (prevents ghost detections)
+  const forceDualModel = inputMode === 'video' || inputMode === 'screen';
+  const forceTinyOnly = inputMode === 'webcam';
+
   const { 
     isModelLoaded, 
     isLoading: modelsLoading, 
@@ -163,13 +167,15 @@ const SmartAdsSystem = () => {
     {
       sourceMode: inputMode,
       cctvMode,
-      // Reactively pass dual model and YOLO settings for video mode
-      useDualModel: captureSettings.useDualModelForVideo && (inputMode === 'video' || inputMode === 'screen'),
-      useYolo: captureSettings.enableYoloForVideo && (inputMode === 'video' || inputMode === 'screen'),
+      // FORCED: dual for video/screen, tiny for webcam (no user toggle needed)
+      useDualModel: forceDualModel && !forceTinyOnly,
+      useYolo: false, // YOLO disabled for now
       config: {
         debugMode,
         // Hard floor to reduce false positives in video/CCTV
         hardMinFaceScore: captureSettings.falsePositiveMinScore,
+        // Force detector type based on input mode
+        detector: forceTinyOnly ? 'tiny' : 'dual',
       },
     }
   );
@@ -678,21 +684,25 @@ const SmartAdsSystem = () => {
         tracked.gender = entry.actualGender;
         tracked.ageGroup = entry.actualAgeGroup;
         tracked.isUserCorrected = true;
+        // Set confidence to 100% since it's user-labeled
+        tracked.confidence = 1.0;
+        tracked.faceScore = 1.0;
         
         trackedFacesRef.current.set(entry.trackingId, tracked);
-        addLog('info', `🏷️ Corrected: ${entry.actualGender}/${entry.actualAgeGroup}`);
+        addLog('info', `🏷️ Corrected: ${entry.actualGender}/${entry.actualAgeGroup} (100% confidence)`);
       }
       
-      // Update displayed detections immediately
+      // Update displayed detections immediately with 100% confidence for labeled
       const updatedDetections = Array.from(trackedFacesRef.current.values())
         .filter(f => f.consecutiveHits >= 2)
         .map(f => ({
           gender: f.stableGender,
           ageGroup: f.stableAgeGroup,
-          confidence: f.confidence,
-          faceScore: f.faceScore,
+          confidence: f.isUserCorrected ? 1.0 : f.confidence,
+          faceScore: f.isUserCorrected ? 1.0 : f.faceScore,
           boundingBox: f.boundingBox,
           trackingId: f.id,
+          isUserCorrected: f.isUserCorrected,
         }));
       setCurrentViewers(updatedDetections);
     } else {

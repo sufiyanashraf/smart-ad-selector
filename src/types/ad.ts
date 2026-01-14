@@ -34,6 +34,7 @@ export interface DetectionResult {
   boundingBox?: FaceBoundingBox;
   trackingId?: string;         // For temporal tracking
   lastSeen?: number;           // Timestamp for tracking
+  isUserCorrected?: boolean;   // True if user-labeled (100% confidence)
 }
 
 export interface AdScore {
