@@ -130,6 +130,65 @@ export const useFaceDetection = (
     };
   }, [sensitivity, options]);
 
+  // Merge detections and deduplicate by position using IoU
+  const mergeDetections = useCallback((
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    detections: any[],
+    videoWidth: number,
+    videoHeight: number
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ): any[] => {
+    if (detections.length === 0) return [];
+    
+    // Sort by score descending
+    const sorted = [...detections].sort((a, b) => {
+      const scoreA = (a.detection?.score ?? a.score) || 0;
+      const scoreB = (b.detection?.score ?? b.score) || 0;
+      return scoreB - scoreA;
+    });
+    
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const merged: any[] = [];
+    const used = new Set<number>();
+    
+    for (let i = 0; i < sorted.length; i++) {
+      if (used.has(i)) continue;
+      
+      merged.push(sorted[i]);
+      used.add(i);
+      
+      const boxA = sorted[i].detection?.box ?? sorted[i].box;
+      if (!boxA) continue;
+      
+      // Mark overlapping detections as used
+      for (let j = i + 1; j < sorted.length; j++) {
+        if (used.has(j)) continue;
+        
+        const boxB = sorted[j].detection?.box ?? sorted[j].box;
+        if (!boxB) continue;
+        
+        // Calculate IoU
+        const x1 = Math.max(boxA.x, boxB.x);
+        const y1 = Math.max(boxA.y, boxB.y);
+        const x2 = Math.min(boxA.x + boxA.width, boxB.x + boxB.width);
+        const y2 = Math.min(boxA.y + boxA.height, boxB.y + boxB.height);
+        
+        const intersection = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+        const areaA = boxA.width * boxA.height;
+        const areaB = boxB.width * boxB.height;
+        const union = areaA + areaB - intersection;
+        
+        const iou = union > 0 ? intersection / union : 0;
+        
+        if (iou > 0.3) {  // If 30%+ overlap, skip duplicate
+          used.add(j);
+        }
+      }
+    }
+    
+    return merged;
+  }, []);
+
   // Run TinyFaceDetector
   const runTinyDetection = useCallback(async (
     input: HTMLVideoElement | HTMLCanvasElement,
@@ -336,70 +395,145 @@ export const useFaceDetection = (
         console.log(`[Detection] Config: sensitivity=${config.sensitivity}, threshold=${detectionThreshold.toFixed(2)}, minScore=${config.minFaceScore}`);
       }
 
-      // ========== PASS 1: Standard detection ==========
-      if (config.detector === 'ssd' && ssdLoaded) {
-        // Use SSD only
-        detectorUsed = 'ssd';
-        if (config.debugMode) console.log('[Detection] Pass 1: SSD Mobilenet');
-        detections = await runSsdDetection(videoElement, detectionThreshold);
-      } else if (config.detector === 'tiny') {
-        // Use TinyFace only
-        if (config.debugMode) console.log('[Detection] Pass 1: TinyFaceDetector');
-        const inputSize = isCCTV ? 416 : 512;
-        detections = await runTinyDetection(videoElement, inputSize, detectionThreshold);
-      } else {
-        // Dual mode: Try TinyFace first (faster)
-        if (config.debugMode) console.log('[Detection] Pass 1: TinyFaceDetector (dual mode)');
-        const inputSize = isCCTV ? 416 : 512;
-        detections = await runTinyDetection(videoElement, inputSize, detectionThreshold);
+      // ========== PASS 1: Multi-scale detection for maximum coverage ==========
+      const pass1Scales = isCCTV ? [320, 416, 512, 608] : [416, 512];
+      const pass1Threshold = Math.max(detectionThreshold - 0.05, 0.1);
+      
+      if (config.debugMode) console.log(`[Detection] Pass 1: Multi-scale scan [${pass1Scales.join(', ')}] @ threshold ${pass1Threshold.toFixed(2)}`);
+      
+      // Try all scales in parallel for maximum detection
+      const allPass1Detections = await Promise.all(
+        pass1Scales.map(async (inputSize) => {
+          try {
+            if (config.detector === 'ssd' && ssdLoaded) {
+              return await runSsdDetection(videoElement, pass1Threshold);
+            } else {
+              return await runTinyDetection(videoElement, inputSize, pass1Threshold);
+            }
+          } catch {
+            return [];
+          }
+        })
+      );
+      
+      // Also try SSD if available (in parallel with TinyFace)
+      if (ssdLoaded && config.detector !== 'tiny') {
+        try {
+          const ssdResults = await runSsdDetection(videoElement, pass1Threshold);
+          if (ssdResults.length > 0) {
+            allPass1Detections.push(ssdResults);
+            detectorUsed = 'ssd';
+          }
+        } catch {
+          // Ignore SSD errors
+        }
       }
-
+      
+      // Merge all detections and deduplicate by position
+      const mergedPass1 = mergeDetections(allPass1Detections.flat(), videoWidth, videoHeight);
+      detections = mergedPass1;
+      
       if (config.debugMode || detections.length > 0) {
-        console.log('[Detection] Pass 1 found', detections.length, 'raw faces');
+        console.log('[Detection] Pass 1 found', detections.length, 'faces from', allPass1Detections.flat().length, 'raw');
       }
 
-      // ========== PASS 2: CCTV rescue with preprocessing + upscale + SSD ==========
-      if (detections.length === 0 && isCCTV && config.detector !== 'tiny') {
+      // ========== PASS 2: CCTV rescue with aggressive preprocessing + upscale ==========
+      if (detections.length < 3 && isCCTV && config.detector !== 'tiny') {
         passUsed = 2;
-        console.log('[Detection] Pass 2: CCTV rescue with preprocessing...');
+        console.log('[Detection] Pass 2: CCTV rescue with aggressive preprocessing...');
         
-        // Create preprocessed and upscaled canvas
+        // Create aggressively preprocessed and upscaled canvas
+        const aggressivePreprocessing = {
+          gamma: Math.max(config.preprocessing.gamma, 1.5),
+          contrast: Math.max(config.preprocessing.contrast, 1.6),
+          sharpen: Math.max(config.preprocessing.sharpen, 0.5),
+          denoise: true,
+        };
+        
         const processedCanvas = createProcessedCanvas(
           videoElement,
-          config.preprocessing,
+          aggressivePreprocessing,
           config.upscale,
           config.roi.enabled ? config.roi : undefined
         );
 
         if (processedCanvas) {
-          preprocessingApplied = config.preprocessing.gamma !== 1 || 
-                                 config.preprocessing.contrast !== 1 || 
-                                 config.preprocessing.sharpen > 0;
+          preprocessingApplied = true;
           upscaled = config.upscale > 1;
           scaleBack = config.upscale;
 
-          // Try SSD on preprocessed canvas (more accurate for small faces)
+          // Run multi-scale on preprocessed canvas
+          const rescueThreshold = Math.max(config.sensitivity - 0.15, 0.08);
+          const pass2Scales = [320, 416, 512, 608];
+          
+          const pass2Detections = await Promise.all(
+            pass2Scales.map(async (inputSize) => {
+              try {
+                return await runTinyDetection(processedCanvas, inputSize, rescueThreshold);
+              } catch {
+                return [];
+              }
+            })
+          );
+          
+          // Also try SSD on preprocessed
           if (ssdLoaded) {
-            detectorUsed = 'ssd';
-            console.log('[Detection] Pass 2: SSD on preprocessed canvas');
-            detections = await runSsdDetection(
-              processedCanvas,
-              Math.max(config.sensitivity - 0.1, 0.2) // Lower threshold for rescue
-            );
+            try {
+              const ssdResults = await runSsdDetection(processedCanvas, rescueThreshold);
+              if (ssdResults.length > 0) {
+                pass2Detections.push(ssdResults);
+                detectorUsed = 'ssd';
+              }
+            } catch {
+              // Ignore
+            }
           }
-
-          // If still no faces, try TinyFace with larger input size
-          if (detections.length === 0) {
-            detectorUsed = 'tiny';
-            console.log('[Detection] Pass 2: TinyFace with 608 input size');
-            detections = await runTinyDetection(
-              processedCanvas,
-              608,
-              Math.max(config.sensitivity - 0.1, 0.2)
-            );
+          
+          const mergedPass2 = mergeDetections(pass2Detections.flat(), videoWidth, videoHeight);
+          
+          // Merge with Pass 1 results
+          if (mergedPass2.length > 0) {
+            detections = mergeDetections([...detections, ...mergedPass2], videoWidth, videoHeight);
           }
-
-          console.log('[Detection] Pass 2 found', detections.length, 'faces');
+          
+          console.log('[Detection] Pass 2 found', mergedPass2.length, 'additional faces, total:', detections.length);
+        }
+      }
+      
+      // ========== PASS 3: Ultra-low threshold scan for difficult cases ==========
+      if (detections.length < 5 && isCCTV) {
+        console.log('[Detection] Pass 3: Ultra-low threshold scan...');
+        
+        const ultraLowThreshold = 0.05;  // Accept almost anything
+        
+        try {
+          // Create maximally enhanced canvas
+          const enhancedCanvas = createProcessedCanvas(
+            videoElement,
+            { gamma: 1.8, contrast: 2.0, sharpen: 0.6, denoise: true },
+            2.5,  // Higher upscale
+            undefined
+          );
+          
+          if (enhancedCanvas) {
+            const pass3Detections = await Promise.all([
+              runTinyDetection(enhancedCanvas, 608, ultraLowThreshold),
+              ssdLoaded ? runSsdDetection(enhancedCanvas, ultraLowThreshold) : Promise.resolve([]),
+            ]);
+            
+            const mergedPass3 = mergeDetections(pass3Detections.flat(), videoWidth, videoHeight);
+            
+            if (mergedPass3.length > 0) {
+              detections = mergeDetections([...detections, ...mergedPass3], videoWidth, videoHeight);
+              scaleBack = 2.5;
+              preprocessingApplied = true;
+              upscaled = true;
+            }
+            
+            console.log('[Detection] Pass 3 found', mergedPass3.length, 'additional faces, total:', detections.length);
+          }
+        } catch (err) {
+          console.warn('[Detection] Pass 3 failed:', err);
         }
       }
 

@@ -67,35 +67,35 @@ export interface CCTVDetectionConfig {
 
 export const DEFAULT_CCTV_CONFIG: CCTVDetectionConfig = {
   detector: 'dual',
-  sensitivity: 0.35,
-  preprocessing: { gamma: 1.2, contrast: 1.3, sharpen: 0.3, denoise: false },
-  upscale: 1.5,
+  sensitivity: 0.15,  // Very low - catch everything
+  preprocessing: { gamma: 1.4, contrast: 1.5, sharpen: 0.4, denoise: true },
+  upscale: 2.0,       // Higher upscale for small faces
   roi: { enabled: false, x: 0, y: 0, width: 1, height: 1 },
-  minFaceScore: 0.3,
-  minFaceSizePx: 24,
-  minFaceSizePercent: 1,
-  aspectRatioMin: 0.5,
-  aspectRatioMax: 2.0,
-  minConsecutiveFrames: 2,
-  holdFrames: 4,
-  maxVelocityPx: 150,
+  minFaceScore: 0.1,  // Very permissive - let more through
+  minFaceSizePx: 12,  // Detect tiny faces
+  minFaceSizePercent: 0.05,  // Accept very small faces (0.05% of frame)
+  aspectRatioMin: 0.25,  // Very wide range for angled/occluded faces
+  aspectRatioMax: 4.0,
+  minConsecutiveFrames: 1,  // Show immediately
+  holdFrames: 8,
+  maxVelocityPx: 250,
   debugMode: false,
 };
 
 export const DEFAULT_WEBCAM_CONFIG: CCTVDetectionConfig = {
   detector: 'tiny',
-  sensitivity: 0.3,  // Lower = more sensitive
+  sensitivity: 0.2,
   preprocessing: { gamma: 1.0, contrast: 1.0, sharpen: 0, denoise: false },
   upscale: 1,
   roi: { enabled: false, x: 0, y: 0, width: 1, height: 1 },
-  minFaceScore: 0.25,  // Relaxed from 0.45 - let more detections through
-  minFaceSizePx: 20,   // Relaxed from 40 - smaller faces OK
-  minFaceSizePercent: 0.3,  // Relaxed from 2% - tiny faces OK
-  aspectRatioMin: 0.4,  // Wider range
-  aspectRatioMax: 2.5,  // Wider range
+  minFaceScore: 0.15,
+  minFaceSizePx: 12,
+  minFaceSizePercent: 0.1,
+  aspectRatioMin: 0.25,
+  aspectRatioMax: 4.0,
   minConsecutiveFrames: 1,
-  holdFrames: 2,
-  maxVelocityPx: 200,
+  holdFrames: 3,
+  maxVelocityPx: 250,
   debugMode: false,
 };
 
