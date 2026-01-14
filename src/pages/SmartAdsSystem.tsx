@@ -37,6 +37,9 @@ const SmartAdsSystem = () => {
     videoQuality: 'lowQuality',
     falsePositiveMinScore: 0.18,
     minDemographicConfidence: 0.75,
+    femaleBoostFactor: 0.15,
+    enableHairHeuristics: true,
+    requireFaceTexture: true,
   });
 
   // CCTV mode settings
