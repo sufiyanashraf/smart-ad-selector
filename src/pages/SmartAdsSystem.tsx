@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { AdMetadata, DemographicCounts, DetectionResult, FaceBoundingBox } from '@/types/ad';
 import { TrackedFace, DEFAULT_CCTV_CONFIG, DEFAULT_WEBCAM_CONFIG, toDetectionResult, CaptureSessionSummary, ViewerAggregate, getStableGender, getStableAgeGroup } from '@/types/detection';
+import { GroundTruthEntry, EvaluationSession } from '@/types/evaluation';
 import { VideoPlayer } from '@/components/VideoPlayer';
 import { DemographicStats } from '@/components/DemographicStats';
 import { AdQueue } from '@/components/AdQueue';
@@ -16,7 +17,7 @@ import { useWebcam } from '@/hooks/useWebcam';
 import { useFaceDetection, resetSimulatedPerson } from '@/hooks/useFaceDetection';
 import { useAdQueue } from '@/hooks/useAdQueue';
 import { sampleAds } from '@/data/sampleAds';
-import { Tv, Zap, Activity, AlertCircle, CheckCircle, Eye, EyeOff, Play, Square, Cpu, Home } from 'lucide-react';
+import { Tv, Zap, Activity, AlertCircle, CheckCircle, Eye, EyeOff, Play, Square, Cpu, Home, Tag } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -40,7 +41,11 @@ const SmartAdsSystem = () => {
     femaleBoostFactor: 0.15,
     enableHairHeuristics: true,
     requireFaceTexture: true,
+    useDualModelForVideo: true,
   });
+
+  // Labeling mode for evaluation
+  const [labelingMode, setLabelingMode] = useState(false);
 
   // CCTV mode settings
   const [cctvMode, setCctvMode] = useState(false);
@@ -581,6 +586,41 @@ const SmartAdsSystem = () => {
     }
   }, [resetManualQueueIndex, addLog]);
 
+  // Handle ground truth labeling for evaluation
+  const handleLabelDetection = useCallback((entry: GroundTruthEntry) => {
+    // Load existing evaluation data
+    const storageKey = 'smartads-evaluation-sessions';
+    let sessions: EvaluationSession[] = [];
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) sessions = JSON.parse(saved);
+    } catch { /* ignore */ }
+    
+    // Get or create current session
+    const today = new Date().toISOString().split('T')[0];
+    let currentSession = sessions.find(s => s.name.includes(today));
+    
+    if (!currentSession) {
+      currentSession = {
+        id: `session_${Date.now()}`,
+        name: `Session ${today}`,
+        createdAt: Date.now(),
+        entries: [],
+      };
+      sessions.push(currentSession);
+    }
+    
+    // Add entry
+    currentSession.entries.push(entry);
+    
+    // Save back
+    localStorage.setItem(storageKey, JSON.stringify(sessions));
+    
+    // Log
+    const wasCorrect = entry.detectedGender === entry.actualGender && entry.detectedAgeGroup === entry.actualAgeGroup && !entry.isFalsePositive;
+    addLog('info', `🏷️ Labeled: ${entry.isFalsePositive ? 'FALSE POSITIVE' : wasCorrect ? '✓ Correct' : `✗ ${entry.actualGender}/${entry.actualAgeGroup}`}`);
+  }, [addLog]);
+
   // Capture window logic - only runs when not in manual mode
   useEffect(() => {
     if (!currentAd || !isPlaying || manualMode) return;
@@ -860,6 +900,19 @@ const SmartAdsSystem = () => {
                 id="manual-mode"
                 checked={manualMode}
                 onCheckedChange={handleManualModeToggle}
+            />
+            </div>
+
+            {/* Labeling Mode Toggle */}
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/50 border border-border">
+              <Tag className={`h-4 w-4 ${labelingMode ? 'text-accent' : 'text-muted-foreground'}`} />
+              <Label htmlFor="labeling-mode" className="text-sm font-medium cursor-pointer">
+                Label
+              </Label>
+              <Switch
+                id="labeling-mode"
+                checked={labelingMode}
+                onCheckedChange={setLabelingMode}
               />
             </div>
 
@@ -958,6 +1011,8 @@ const SmartAdsSystem = () => {
               debugMode={debugMode}
               debugInfo={getDebugInfo()}
               trackedFaces={trackedFacesArray}
+              labelingMode={labelingMode}
+              onLabelDetection={handleLabelDetection}
             />
           </div>
           <SystemLogs logs={logs} />
