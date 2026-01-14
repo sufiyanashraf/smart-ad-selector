@@ -452,15 +452,24 @@ export const useFaceDetection = (
       const pass1Scales = isCCTV ? [320, 416, 512, 608] : [416, 512];
       const pass1Threshold = Math.max(detectionThreshold - 0.05, 0.1);
       
-      if (config.debugMode) console.log(`[Detection] Pass 1: Multi-scale scan [${pass1Scales.join(', ')}] @ threshold ${pass1Threshold.toFixed(2)}`);
+      // Determine if we're in dual mode (use both TinyFace AND SSD)
+      const isDualMode = config.detector === 'dual' && ssdLoaded;
+      const useSsdOnly = config.detector === 'ssd' && ssdLoaded;
+      
+      if (config.debugMode) {
+        const modeLabel = isDualMode ? 'DUAL (Tiny+SSD)' : useSsdOnly ? 'SSD' : 'Tiny';
+        console.log(`[Detection] Pass 1: ${modeLabel} mode, scales [${pass1Scales.join(', ')}] @ threshold ${pass1Threshold.toFixed(2)}`);
+      }
       
       // Try all scales in parallel for maximum detection
       const allPass1Detections = await Promise.all(
         pass1Scales.map(async (inputSize) => {
           try {
-            if (config.detector === 'ssd' && ssdLoaded) {
+            if (useSsdOnly) {
+              // SSD-only mode
               return await runSsdDetection(videoElement, pass1Threshold);
             } else {
+              // TinyFace (default) - also used in dual mode
               return await runTinyDetection(videoElement, inputSize, pass1Threshold);
             }
           } catch {
@@ -469,17 +478,23 @@ export const useFaceDetection = (
         })
       );
       
-      // Also try SSD if available (in parallel with TinyFace)
-      if (ssdLoaded && config.detector !== 'tiny') {
+      // In dual mode OR when SSD is available and not in tiny-only mode, also run SSD
+      if (ssdLoaded && (isDualMode || config.detector !== 'tiny')) {
         try {
           const ssdResults = await runSsdDetection(videoElement, pass1Threshold);
           if (ssdResults.length > 0) {
             allPass1Detections.push(ssdResults);
-            detectorUsed = 'ssd';
+            // Mark as dual or ssd based on mode
+            detectorUsed = isDualMode ? 'ssd' : 'ssd'; // Will show 'dual' in debug via config.detector
           }
         } catch {
           // Ignore SSD errors
         }
+      }
+      
+      // Update detectorUsed for dual mode display
+      if (isDualMode) {
+        detectorUsed = 'ssd'; // Internally track that SSD was used (for tracking IDs)
       }
       
       // Merge all detections and deduplicate by position
@@ -487,7 +502,8 @@ export const useFaceDetection = (
       detections = mergedPass1;
       
       if (config.debugMode || detections.length > 0) {
-        console.log('[Detection] Pass 1 found', detections.length, 'faces from', allPass1Detections.flat().length, 'raw');
+        const modeLabel = isDualMode ? 'DUAL' : detectorUsed === 'ssd' ? 'SSD' : 'Tiny';
+        console.log(`[Detection] Pass 1 (${modeLabel}) found`, detections.length, 'faces from', allPass1Detections.flat().length, 'raw');
       }
 
       // ========== PASS 2: CCTV rescue with aggressive preprocessing + upscale ==========

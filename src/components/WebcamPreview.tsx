@@ -386,6 +386,133 @@ export const WebcamPreview = ({
         </div>
       </div>
 
+      {/* Labeling Forms - positioned OUTSIDE the camera container to avoid clipping */}
+      {labelingMode && isActive && videoRef.current && detections.map((detection, idx) => {
+        if (!detection.boundingBox) return null;
+        
+        const video = videoRef.current!;
+        const rect = video.getBoundingClientRect();
+        const videoWidth = video.videoWidth || 640;
+        const videoHeight = video.videoHeight || 480;
+        const scaleX = rect.width / videoWidth;
+        const scaleY = rect.height / videoHeight;
+        
+        const scaledY = detection.boundingBox.y * scaleY;
+        const scaledHeight = detection.boundingBox.height * scaleY;
+        const faceId = detection.trackingId || `face_${idx}`;
+        
+        const isLabeling = labelingFace === faceId;
+        
+        // Only render expanded form outside container
+        if (!isLabeling) return null;
+        
+        return (
+          <div
+            key={`form-${faceId}`}
+            className="absolute left-1/2 -translate-x-1/2 z-50 pointer-events-auto"
+            style={{
+              // Position above the camera container
+              top: '-10px',
+              transform: 'translateX(-50%) translateY(-100%)',
+              width: '280px',
+            }}
+          >
+            <div className="bg-background border-2 border-primary rounded-lg p-4 space-y-3 shadow-2xl">
+              <div className="text-sm font-semibold text-center border-b pb-2 flex items-center justify-center gap-2">
+                <Tag className="h-4 w-4 text-primary" />
+                Label Ground Truth
+              </div>
+              
+              {/* Gender Selection */}
+              <div className="space-y-2">
+                <Label className="text-xs font-medium text-muted-foreground">Gender</Label>
+                <RadioGroup 
+                  value={formGender} 
+                  onValueChange={(v) => setFormGender(v as 'male' | 'female')}
+                  className="flex gap-3"
+                  disabled={formFalsePositive}
+                >
+                  <div className="flex items-center space-x-2 flex-1">
+                    <RadioGroupItem value="male" id={`gender-male-${faceId}`} />
+                    <Label htmlFor={`gender-male-${faceId}`} className="text-sm cursor-pointer">
+                      ♂ Male
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-2 flex-1">
+                    <RadioGroupItem value="female" id={`gender-female-${faceId}`} />
+                    <Label htmlFor={`gender-female-${faceId}`} className="text-sm cursor-pointer">
+                      ♀ Female
+                    </Label>
+                  </div>
+                </RadioGroup>
+              </div>
+              
+              {/* Age Selection */}
+              <div className="space-y-2">
+                <Label className="text-xs font-medium text-muted-foreground">Age Group</Label>
+                <RadioGroup 
+                  value={formAge} 
+                  onValueChange={(v) => setFormAge(v as 'kid' | 'young' | 'adult')}
+                  className="flex gap-2"
+                  disabled={formFalsePositive}
+                >
+                  {(['kid', 'young', 'adult'] as const).map(age => (
+                    <div key={age} className="flex items-center space-x-1.5 flex-1">
+                      <RadioGroupItem value={age} id={`age-${age}-${faceId}`} />
+                      <Label htmlFor={`age-${age}-${faceId}`} className="text-xs cursor-pointer capitalize">
+                        {age}
+                      </Label>
+                    </div>
+                  ))}
+                </RadioGroup>
+              </div>
+              
+              {/* False Positive Checkbox */}
+              <div className="flex items-center space-x-2 pt-2 border-t">
+                <Checkbox 
+                  id={`fp-${faceId}`}
+                  checked={formFalsePositive}
+                  onCheckedChange={(checked) => setFormFalsePositive(!!checked)}
+                />
+                <Label 
+                  htmlFor={`fp-${faceId}`} 
+                  className="text-sm text-destructive font-medium cursor-pointer"
+                >
+                  Not a real face (false positive)
+                </Label>
+              </div>
+              
+              {/* Action Buttons */}
+              <div className="flex gap-2 pt-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="flex-1"
+                  onClick={() => setLabelingFace(null)}
+                >
+                  <X className="h-4 w-4 mr-1" />
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  variant="default"
+                  className="flex-1 bg-green-600 hover:bg-green-700"
+                  onClick={() => handleSaveLabel(detection, idx)}
+                >
+                  <Save className="h-4 w-4 mr-1" />
+                  Save
+                </Button>
+              </div>
+              
+              {/* Detection info */}
+              <div className="text-xs text-muted-foreground text-center pt-2 border-t">
+                AI detected: {detection.gender}/{detection.ageGroup} ({(detection.confidence * 100).toFixed(0)}%)
+              </div>
+            </div>
+          </div>
+        );
+      })}
+
       <div className="relative aspect-video rounded-lg overflow-hidden bg-muted">
         {/* Debug Overlay */}
         <DebugOverlay 
@@ -418,7 +545,7 @@ export const WebcamPreview = ({
             style={{ zIndex: 1 }}
           />
           
-          {/* Single-Save Labeling UI - smart positioning above/below face */}
+          {/* Label buttons on faces - inside container */}
           {labelingMode && isActive && detections.map((detection, idx) => {
             if (!detection.boundingBox || !videoRef.current) return null;
             
@@ -439,156 +566,48 @@ export const WebcamPreview = ({
             const isLabeledInSession = labeledFacesInSession.has(faceId);
             const justSaved = recentlySaved.has(faceId);
             
-            // Smart positioning: show above face if not enough space below
-            const containerHeight = rect.height;
-            const formHeight = isLabeling ? 260 : 36; // Form is ~260px, button is ~36px
-            const spaceBelow = containerHeight - (scaledY + scaledHeight + 4);
-            const showAbove = spaceBelow < formHeight && scaledY > formHeight;
-            
-            // Calculate position
-            const topPosition = showAbove 
-              ? scaledY - formHeight - 4 
-              : scaledY + scaledHeight + 4;
-            
-            // Clamp horizontal position to stay within bounds
-            const maxLeft = rect.width - Math.max(scaledWidth, 200);
-            const clampedLeft = Math.max(0, Math.min(scaledX, maxLeft));
+            // Don't show button if form is open (form is rendered outside)
+            if (isLabeling) return null;
             
             return (
               <div
                 key={faceId}
                 className="absolute pointer-events-auto"
                 style={{
-                  left: `${clampedLeft}px`,
-                  top: `${Math.max(0, topPosition)}px`,
-                  width: `${Math.max(scaledWidth, 200)}px`,
-                  maxHeight: `${Math.min(formHeight + 10, containerHeight - 10)}px`,
+                  left: `${scaledX}px`,
+                  top: `${scaledY + scaledHeight + 4}px`,
+                  width: `${Math.max(scaledWidth, 120)}px`,
                   zIndex: 20,
-                  overflowY: 'auto',
                 }}
               >
-                {!isLabeling ? (
-                  <Button
-                    size="sm"
-                    variant={justSaved ? 'default' : isLabeledInSession ? 'secondary' : 'outline'}
-                    className={cn(
-                      "w-full h-7 text-[11px] gap-1.5",
-                      justSaved && "bg-green-600 hover:bg-green-700",
-                      isLabeledInSession && !justSaved && "opacity-70"
-                    )}
-                    onClick={() => openLabelingForm(faceId, detection)}
-                    disabled={justSaved}
-                  >
-                    {justSaved ? (
-                      <>
-                        <Check className="h-3 w-3" />
-                        Saved!
-                      </>
-                    ) : isLabeledInSession ? (
-                      <>
-                        <Tag className="h-3 w-3" />
-                        Re-label
-                      </>
-                    ) : (
-                      <>
-                        <Tag className="h-3 w-3" />
-                        Label This Face
-                      </>
-                    )}
-                  </Button>
-                ) : (
-                  <div className="bg-background/98 border-2 border-primary rounded-lg p-3 space-y-3 shadow-xl">
-                    <div className="text-xs font-semibold text-center border-b pb-2">
-                      Label Ground Truth
-                    </div>
-                    
-                    {/* Gender Selection */}
-                    <div className="space-y-1.5">
-                      <Label className="text-[10px] font-medium text-muted-foreground">Gender</Label>
-                      <RadioGroup 
-                        value={formGender} 
-                        onValueChange={(v) => setFormGender(v as 'male' | 'female')}
-                        className="flex gap-2"
-                        disabled={formFalsePositive}
-                      >
-                        <div className="flex items-center space-x-1.5 flex-1">
-                          <RadioGroupItem value="male" id={`gender-male-${faceId}`} className="h-3 w-3" />
-                          <Label htmlFor={`gender-male-${faceId}`} className="text-[11px] cursor-pointer">
-                            ♂ Male
-                          </Label>
-                        </div>
-                        <div className="flex items-center space-x-1.5 flex-1">
-                          <RadioGroupItem value="female" id={`gender-female-${faceId}`} className="h-3 w-3" />
-                          <Label htmlFor={`gender-female-${faceId}`} className="text-[11px] cursor-pointer">
-                            ♀ Female
-                          </Label>
-                        </div>
-                      </RadioGroup>
-                    </div>
-                    
-                    {/* Age Selection */}
-                    <div className="space-y-1.5">
-                      <Label className="text-[10px] font-medium text-muted-foreground">Age Group</Label>
-                      <RadioGroup 
-                        value={formAge} 
-                        onValueChange={(v) => setFormAge(v as 'kid' | 'young' | 'adult')}
-                        className="flex gap-1"
-                        disabled={formFalsePositive}
-                      >
-                        {(['kid', 'young', 'adult'] as const).map(age => (
-                          <div key={age} className="flex items-center space-x-1 flex-1">
-                            <RadioGroupItem value={age} id={`age-${age}-${faceId}`} className="h-3 w-3" />
-                            <Label htmlFor={`age-${age}-${faceId}`} className="text-[10px] cursor-pointer capitalize">
-                              {age}
-                            </Label>
-                          </div>
-                        ))}
-                      </RadioGroup>
-                    </div>
-                    
-                    {/* False Positive Checkbox */}
-                    <div className="flex items-center space-x-2 pt-1 border-t">
-                      <Checkbox 
-                        id={`fp-${faceId}`}
-                        checked={formFalsePositive}
-                        onCheckedChange={(checked) => setFormFalsePositive(!!checked)}
-                        className="h-3.5 w-3.5"
-                      />
-                      <Label 
-                        htmlFor={`fp-${faceId}`} 
-                        className="text-[11px] text-destructive font-medium cursor-pointer"
-                      >
-                        Not a real face (false positive)
-                      </Label>
-                    </div>
-                    
-                    {/* Action Buttons */}
-                    <div className="flex gap-2 pt-2">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="flex-1 h-7 text-[11px]"
-                        onClick={() => setLabelingFace(null)}
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="default"
-                        className="flex-1 h-7 text-[11px] bg-green-600 hover:bg-green-700"
-                        onClick={() => handleSaveLabel(detection, idx)}
-                      >
-                        <Save className="h-3 w-3 mr-1" />
-                        Save
-                      </Button>
-                    </div>
-                    
-                    {/* Detection info */}
-                    <div className="text-[9px] text-muted-foreground text-center pt-1 border-t">
-                      Detected: {detection.gender}/{detection.ageGroup} ({(detection.confidence * 100).toFixed(0)}%)
-                    </div>
-                  </div>
-                )}
+                <Button
+                  size="sm"
+                  variant={justSaved ? 'default' : isLabeledInSession ? 'secondary' : 'outline'}
+                  className={cn(
+                    "w-full h-7 text-[11px] gap-1.5",
+                    justSaved && "bg-green-600 hover:bg-green-700",
+                    isLabeledInSession && !justSaved && "opacity-70"
+                  )}
+                  onClick={() => openLabelingForm(faceId, detection)}
+                  disabled={justSaved}
+                >
+                  {justSaved ? (
+                    <>
+                      <Check className="h-3 w-3" />
+                      Saved!
+                    </>
+                  ) : isLabeledInSession ? (
+                    <>
+                      <Tag className="h-3 w-3" />
+                      Re-label
+                    </>
+                  ) : (
+                    <>
+                      <Tag className="h-3 w-3" />
+                      Label This Face
+                    </>
+                  )}
+                </Button>
               </div>
             );
           })}

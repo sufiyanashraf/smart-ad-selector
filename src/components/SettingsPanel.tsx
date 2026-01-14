@@ -345,17 +345,17 @@ export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps
             />
           </div>
 
-          {/* YOLO for Video Toggle */}
+          {/* YOLO for Video Toggle - Currently uses SSD as enhanced detector */}
           <div className="space-y-3 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
             <div className="flex items-center justify-between">
               <div className="space-y-0.5 flex-1">
                 <Label className="flex items-center gap-2">
                   <Zap className="h-4 w-4 text-yellow-600" />
-                  Enable YOLO (Video)
-                  <InfoTooltip text="Uses YOLOv8-face model specifically designed for face detection in crowds. Best for CCTV footage with many people." />
+                  Enhanced Detection (Video)
+                  <InfoTooltip text="Uses the high-accuracy SSD MobileNet model as the primary detector for video files. Best for CCTV footage with challenging conditions." />
                 </Label>
                 <p className="text-xs text-muted-foreground">
-                  🎯 YOLOv8-face for crowd/CCTV detection
+                  🎯 SSD MobileNet for better video/CCTV detection
                 </p>
               </div>
               <input
@@ -363,69 +363,12 @@ export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps
                 checked={localSettings.enableYoloForVideo}
                 onChange={(e) => setLocalSettings(prev => ({ ...prev, enableYoloForVideo: e.target.checked }))}
                 className="h-4 w-4 rounded border-gray-300"
-                disabled={!yoloStatus?.hasLocal && !yoloStatus?.hasCached}
               />
             </div>
             
-            {/* YOLO Model Status & Download */}
-            <div className="pt-2 border-t border-yellow-500/20">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-yellow-700">Model Status:</span>
-                <span className="text-xs">
-                  {yoloStatus?.hasLocal ? (
-                    <span className="text-green-600 flex items-center gap-1">
-                      <Check className="h-3 w-3" /> Local files ready
-                    </span>
-                  ) : yoloStatus?.hasCached ? (
-                    <span className="text-blue-600 flex items-center gap-1">
-                      <Check className="h-3 w-3" /> Cached in browser
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">Not available</span>
-                  )}
-                </span>
-              </div>
-              
-              {yoloDownloading ? (
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 text-xs text-yellow-700">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    {yoloProgress?.message || 'Downloading...'}
-                  </div>
-                  {yoloProgress && yoloProgress.progress > 0 && (
-                    <div className="h-1.5 bg-yellow-200 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-yellow-500 transition-all duration-300"
-                        style={{ width: `${yoloProgress.progress}%` }}
-                      />
-                    </div>
-                  )}
-                </div>
-              ) : !yoloStatus?.hasLocal && !yoloStatus?.hasCached ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="w-full h-8 text-xs border-yellow-500/50 text-yellow-700 hover:bg-yellow-500/20"
-                  onClick={handleDownloadYolo}
-                >
-                  <Download className="h-3 w-3 mr-1" />
-                  Download YOLO Model (~6MB)
-                </Button>
-              ) : yoloStatus?.hasCached && !yoloStatus?.hasLocal ? (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="w-full h-7 text-[10px] text-muted-foreground"
-                  onClick={handleClearYoloCache}
-                >
-                  Clear cached model
-                </Button>
-              ) : null}
-              
-              <p className="text-[10px] text-muted-foreground mt-2">
-                💡 Place model files in <code className="bg-muted px-1 rounded">public/models/yolov8-face/</code> for local use, or click download to cache in browser.
-              </p>
-            </div>
+            <p className="text-[10px] text-muted-foreground pt-2 border-t border-yellow-500/20">
+              💡 When enabled, uses SSD MobileNet as the primary detector instead of TinyFace. Slower but more accurate for difficult footage.
+            </p>
           </div>
 
           {/* Capture Window */}
