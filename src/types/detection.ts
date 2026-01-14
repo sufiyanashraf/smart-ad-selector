@@ -32,6 +32,8 @@ export interface TrackedFace {
   ageVotes: { kid: number; young: number; adult: number };
   stableGender: 'male' | 'female';
   stableAgeGroup: 'kid' | 'young' | 'adult';
+  // User correction flag - when true, ignore AI updates
+  isUserCorrected?: boolean;
 }
 
 export interface DetectionDebugInfo {

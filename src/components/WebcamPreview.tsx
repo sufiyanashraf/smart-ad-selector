@@ -139,12 +139,13 @@ export const WebcamPreview = ({
     setFormFalsePositive(false);
   };
 
-  // Handle save label
+  // Handle save label - includes trackingId for live correction
   const handleSaveLabel = (detection: DetectionResult, idx: number) => {
     if (!onLabelDetection || !detection.boundingBox) return;
     
     const faceId = detection.trackingId || `face_${idx}`;
     
+    // Pass trackingId so SmartAdsSystem can correct the live detection
     onLabelDetection({
       id: `${Date.now()}_${idx}`,
       timestamp: Date.now(),
@@ -156,7 +157,8 @@ export const WebcamPreview = ({
       actualGender: formFalsePositive ? detection.gender : formGender,
       actualAgeGroup: formFalsePositive ? detection.ageGroup : formAge,
       isFalsePositive: formFalsePositive,
-    });
+      trackingId: faceId, // Include tracking ID for live correction
+    } as GroundTruthEntry & { trackingId: string });
     
     // Track as labeled in session
     labeledFacesInSession.add(faceId);

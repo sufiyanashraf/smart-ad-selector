@@ -321,11 +321,18 @@ const SmartAdsSystem = () => {
           const newVx = (detection.boundingBox!.x - trackedFace.boundingBox.x);
           const newVy = (detection.boundingBox!.y - trackedFace.boundingBox.y);
           
-          // Temporal voting: only add votes if confidence is high enough
-          const newGenderVotes = { ...trackedFace.genderVotes };
-          const newAgeVotes = { ...trackedFace.ageVotes };
+          // Skip demographic updates if user has manually corrected this face
+          const isUserCorrected = trackedFace.isUserCorrected === true;
           
-          if (detection.confidence >= MIN_VOTE_CONFIDENCE) {
+          // Temporal voting: only add votes if confidence is high enough AND not user-corrected
+          const newGenderVotes = isUserCorrected 
+            ? trackedFace.genderVotes 
+            : { ...trackedFace.genderVotes };
+          const newAgeVotes = isUserCorrected 
+            ? trackedFace.ageVotes 
+            : { ...trackedFace.ageVotes };
+          
+          if (!isUserCorrected && detection.confidence >= MIN_VOTE_CONFIDENCE) {
             const voteWeight = detection.confidence * Math.min(detection.faceScore, 1);
             
             // Apply female boost for uncertain gender classifications to counter male bias
@@ -342,8 +349,13 @@ const SmartAdsSystem = () => {
           }
           
           // Calculate stable gender/age from votes (avoid default-male bias on weak evidence)
-          const stableGender = getStableGender(newGenderVotes, trackedFace.stableGender);
-          const stableAgeGroup = getStableAgeGroup(newAgeVotes, trackedFace.stableAgeGroup);
+          // For user-corrected faces, keep the user's values
+          const stableGender = isUserCorrected 
+            ? trackedFace.stableGender 
+            : getStableGender(newGenderVotes, trackedFace.stableGender);
+          const stableAgeGroup = isUserCorrected 
+            ? trackedFace.stableAgeGroup 
+            : getStableAgeGroup(newAgeVotes, trackedFace.stableAgeGroup);
           
           tracked.set(id, {
             ...trackedFace,
@@ -357,10 +369,10 @@ const SmartAdsSystem = () => {
               vx: trackedFace.velocity.vx * 0.5 + newVx * 0.5,
               vy: trackedFace.velocity.vy * 0.5 + newVy * 0.5,
             },
-            confidence: detection.confidence,
+            confidence: isUserCorrected ? 1.0 : detection.confidence, // User corrections get max confidence
             faceScore: detection.faceScore,
-            gender: detection.gender,
-            ageGroup: detection.ageGroup,
+            gender: isUserCorrected ? trackedFace.gender : detection.gender,
+            ageGroup: isUserCorrected ? trackedFace.ageGroup : detection.ageGroup,
             consecutiveHits: trackedFace.consecutiveHits + 1,
             missedFrames: 0,
             lastSeenAt: currentTime,
@@ -369,6 +381,7 @@ const SmartAdsSystem = () => {
             ageVotes: newAgeVotes,
             stableGender,
             stableAgeGroup,
+            isUserCorrected, // Preserve the flag
           });
           
           // Update capture session aggregation
@@ -609,8 +622,8 @@ const SmartAdsSystem = () => {
     }
   }, [resetManualQueueIndex, addLog]);
 
-  // Handle ground truth labeling for evaluation
-  const handleLabelDetection = useCallback((entry: GroundTruthEntry) => {
+  // Handle ground truth labeling for evaluation AND correct the live detection
+  const handleLabelDetection = useCallback((entry: GroundTruthEntry & { trackingId?: string }) => {
     // Load existing evaluation data
     const storageKey = 'smartads-evaluation-sessions';
     let sessions: EvaluationSession[] = [];
@@ -639,9 +652,54 @@ const SmartAdsSystem = () => {
     // Save back
     localStorage.setItem(storageKey, JSON.stringify(sessions));
     
-    // Log
-    const wasCorrect = entry.detectedGender === entry.actualGender && entry.detectedAgeGroup === entry.actualAgeGroup && !entry.isFalsePositive;
-    addLog('info', `🏷️ Labeled: ${entry.isFalsePositive ? 'FALSE POSITIVE' : wasCorrect ? '✓ Correct' : `✗ ${entry.actualGender}/${entry.actualAgeGroup}`}`);
+    // CORRECTION: Apply the label to the live tracked face
+    if (entry.trackingId && trackedFacesRef.current.has(entry.trackingId)) {
+      const tracked = trackedFacesRef.current.get(entry.trackingId)!;
+      
+      if (entry.isFalsePositive) {
+        // Remove false positive from tracking
+        trackedFacesRef.current.delete(entry.trackingId);
+        addLog('info', `🏷️ FALSE POSITIVE removed from tracking`);
+      } else {
+        // Correct the tracked face with user-provided ground truth
+        // Set overwhelming vote weights so the correction persists
+        const correctionWeight = 100;
+        tracked.genderVotes = { 
+          male: entry.actualGender === 'male' ? correctionWeight : 0, 
+          female: entry.actualGender === 'female' ? correctionWeight : 0 
+        };
+        tracked.ageVotes = { 
+          kid: entry.actualAgeGroup === 'kid' ? correctionWeight : 0, 
+          young: entry.actualAgeGroup === 'young' ? correctionWeight : 0, 
+          adult: entry.actualAgeGroup === 'adult' ? correctionWeight : 0 
+        };
+        tracked.stableGender = entry.actualGender;
+        tracked.stableAgeGroup = entry.actualAgeGroup;
+        tracked.gender = entry.actualGender;
+        tracked.ageGroup = entry.actualAgeGroup;
+        tracked.isUserCorrected = true;
+        
+        trackedFacesRef.current.set(entry.trackingId, tracked);
+        addLog('info', `🏷️ Corrected: ${entry.actualGender}/${entry.actualAgeGroup}`);
+      }
+      
+      // Update displayed detections immediately
+      const updatedDetections = Array.from(trackedFacesRef.current.values())
+        .filter(f => f.consecutiveHits >= 2)
+        .map(f => ({
+          gender: f.stableGender,
+          ageGroup: f.stableAgeGroup,
+          confidence: f.confidence,
+          faceScore: f.faceScore,
+          boundingBox: f.boundingBox,
+          trackingId: f.id,
+        }));
+      setCurrentViewers(updatedDetections);
+    } else {
+      // Log even if no live tracking (e.g., paused video)
+      const wasCorrect = entry.detectedGender === entry.actualGender && entry.detectedAgeGroup === entry.actualAgeGroup && !entry.isFalsePositive;
+      addLog('info', `🏷️ Labeled: ${entry.isFalsePositive ? 'FALSE POSITIVE' : wasCorrect ? '✓ Correct' : `✗ ${entry.actualGender}/${entry.actualAgeGroup}`}`);
+    }
   }, [addLog]);
 
   // Capture window logic - only runs when not in manual mode
