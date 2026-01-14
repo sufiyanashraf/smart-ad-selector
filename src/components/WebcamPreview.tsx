@@ -414,9 +414,10 @@ export const WebcamPreview = ({
           <canvas
             ref={canvasRef}
             className="absolute inset-0 w-full h-full pointer-events-none"
+            style={{ zIndex: 1 }}
           />
           
-          {/* Single-Save Labeling UI */}
+          {/* Single-Save Labeling UI - positioned above canvas */}
           {labelingMode && isActive && detections.map((detection, idx) => {
             if (!detection.boundingBox || !videoRef.current) return null;
             
@@ -440,11 +441,12 @@ export const WebcamPreview = ({
             return (
               <div
                 key={faceId}
-                className="absolute"
+                className="absolute pointer-events-auto"
                 style={{
                   left: `${scaledX}px`,
                   top: `${scaledY + scaledHeight + 4}px`,
                   width: `${Math.max(scaledWidth, 180)}px`,
+                  zIndex: 10,
                 }}
               >
                 {!isLabeling ? (
