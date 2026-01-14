@@ -5,6 +5,15 @@
 import { FaceBoundingBox, DetectionResult } from './ad';
 import { PreprocessingOptions, ROIConfig } from '@/utils/imagePreprocessing';
 
+// Temporal voting for stable gender/age classification
+export interface DemographicVotes {
+  male: number;
+  female: number;
+  kid: number;
+  young: number;
+  adult: number;
+}
+
 export interface TrackedFace {
   id: string;
   boundingBox: FaceBoundingBox;
@@ -18,6 +27,11 @@ export interface TrackedFace {
   firstSeenAt: number;
   lastSeenAt: number;
   detectorUsed: 'tiny' | 'ssd';
+  // Temporal stabilization votes
+  genderVotes: { male: number; female: number };
+  ageVotes: { kid: number; young: number; adult: number };
+  stableGender: 'male' | 'female';
+  stableAgeGroup: 'kid' | 'young' | 'adult';
 }
 
 export interface DetectionDebugInfo {
@@ -76,7 +90,7 @@ export const DEFAULT_CCTV_CONFIG: CCTVDetectionConfig = {
   minFaceSizePercent: 0.05,  // Accept very small faces (0.05% of frame)
   aspectRatioMin: 0.25,  // Very wide range for angled/occluded faces
   aspectRatioMax: 4.0,
-  minConsecutiveFrames: 1,  // Show immediately
+  minConsecutiveFrames: 2,  // Require 2 frames for stability (was 1)
   holdFrames: 8,
   maxVelocityPx: 250,
   debugMode: false,
@@ -93,7 +107,7 @@ export const DEFAULT_WEBCAM_CONFIG: CCTVDetectionConfig = {
   minFaceSizePercent: 0.1,
   aspectRatioMin: 0.25,
   aspectRatioMax: 4.0,
-  minConsecutiveFrames: 1,
+  minConsecutiveFrames: 2,  // Require 2 frames for stability (was 1)
   holdFrames: 3,
   maxVelocityPx: 250,
   debugMode: false,
@@ -114,14 +128,52 @@ export const DEFAULT_HYBRID_CONFIG: HybridDetectionConfig = {
   debugMode: false,
 };
 
+// Capture session aggregation types
+export interface ViewerAggregate {
+  trackingId: string;
+  genderVotes: { male: number; female: number };
+  ageVotes: { kid: number; young: number; adult: number };
+  seenFrames: number;
+  bestFaceScore: number;
+  bestConfidence: number;
+  finalGender: 'male' | 'female';
+  finalAgeGroup: 'kid' | 'young' | 'adult';
+}
+
+export interface CaptureSessionSummary {
+  startedAt: number;
+  endedAt?: number;
+  totalFrames: number;
+  uniqueViewers: number;
+  demographics: {
+    male: number;
+    female: number;
+    kid: number;
+    young: number;
+    adult: number;
+  };
+  viewers: ViewerAggregate[];
+}
+
 export function toDetectionResult(tracked: TrackedFace): DetectionResult {
   return {
-    gender: tracked.gender,
-    ageGroup: tracked.ageGroup,
+    gender: tracked.stableGender,  // Use stable gender from votes
+    ageGroup: tracked.stableAgeGroup,  // Use stable age from votes
     confidence: tracked.confidence,
     faceScore: tracked.faceScore,
     boundingBox: tracked.boundingBox,
     trackingId: tracked.id,
     lastSeen: tracked.lastSeenAt,
   };
+}
+
+// Helper to determine stable gender/age from votes
+export function getStableGender(votes: { male: number; female: number }): 'male' | 'female' {
+  return votes.female > votes.male ? 'female' : 'male';
+}
+
+export function getStableAgeGroup(votes: { kid: number; young: number; adult: number }): 'kid' | 'young' | 'adult' {
+  if (votes.kid >= votes.young && votes.kid >= votes.adult) return 'kid';
+  if (votes.adult > votes.young && votes.adult > votes.kid) return 'adult';
+  return 'young';
 }

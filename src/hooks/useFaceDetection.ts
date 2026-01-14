@@ -562,13 +562,38 @@ export const useFaceDetection = (
               ssdLoaded ? runSsdDetection(enhancedCanvas, ultraLowThreshold) : Promise.resolve([]),
             ]);
 
-            // Keep only stronger candidates (reduces wall/sky false positives)
+            // Keep only stronger candidates with valid size (reduces wall/sky false positives)
             const strongCandidates = pass3Detections
               .flat()
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               .filter((d: any) => {
-                const score = (d.detection?.score ?? d.score ?? 0) as number;
-                return score >= pass3MinCandidateScore;
+                const det = d.detection ?? d;
+                const score = (det.score ?? 0) as number;
+                const box = det.box;
+                
+                // Must have valid score
+                if (score < pass3MinCandidateScore) return false;
+                
+                // Must have valid bounding box
+                if (!box || !box.width || !box.height) return false;
+                
+                // Apply size constraints (scaled by 2.5 for enhanced canvas)
+                const actualWidth = box.width / 2.5;
+                const actualHeight = box.height / 2.5;
+                
+                // Reject if too small (likely noise) or too large (likely wall/background)
+                if (actualWidth < config.minFaceSizePx || actualHeight < config.minFaceSizePx) return false;
+                
+                // Reject if face is larger than 40% of frame (likely false positive on wall/sky)
+                const frameArea = videoWidth * videoHeight;
+                const faceArea = actualWidth * actualHeight;
+                if (faceArea > frameArea * 0.4) return false;
+                
+                // Validate aspect ratio
+                const aspectRatio = actualWidth / actualHeight;
+                if (aspectRatio < config.aspectRatioMin || aspectRatio > config.aspectRatioMax) return false;
+                
+                return true;
               });
 
             const mergedPass3 = mergeDetections(strongCandidates, videoWidth, videoHeight, 0.6, 0.9);

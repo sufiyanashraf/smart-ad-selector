@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { AdMetadata, DemographicCounts, DetectionResult, FaceBoundingBox } from '@/types/ad';
-import { TrackedFace, CCTVDetectionConfig, DEFAULT_CCTV_CONFIG, DEFAULT_WEBCAM_CONFIG, toDetectionResult } from '@/types/detection';
+import { TrackedFace, DEFAULT_CCTV_CONFIG, DEFAULT_WEBCAM_CONFIG, toDetectionResult, CaptureSessionSummary, ViewerAggregate, getStableGender, getStableAgeGroup } from '@/types/detection';
 import { VideoPlayer } from '@/components/VideoPlayer';
 import { DemographicStats } from '@/components/DemographicStats';
 import { AdQueue } from '@/components/AdQueue';
@@ -11,6 +11,7 @@ import { SettingsPanel, CaptureSettings } from '@/components/SettingsPanel';
 import { AdManager } from '@/components/AdManager';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { InputSourceSelector } from '@/components/InputSourceSelector';
+import { CaptureSessionSummary as CaptureSessionSummaryComponent } from '@/components/CaptureSessionSummary';
 import { useWebcam } from '@/hooks/useWebcam';
 import { useFaceDetection, resetSimulatedPerson } from '@/hooks/useFaceDetection';
 import { useAdQueue } from '@/hooks/useAdQueue';
@@ -20,6 +21,11 @@ import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+
+// Minimum confidence to count a detection vote (reduces noise)
+const MIN_VOTE_CONFIDENCE = 0.65;
+// Minimum frames a face must be seen to count in session summary
+const MIN_FRAMES_FOR_SESSION = 2;
 
 const SmartAdsSystem = () => {
   // Settings state - default to 40% capture window (60%-100%) and medium sensitivity
@@ -89,6 +95,10 @@ const SmartAdsSystem = () => {
     return [];
   });
 
+  // Session summary state - shown after capture ends
+  const [lastSessionSummary, setLastSessionSummary] = useState<CaptureSessionSummary | null>(null);
+  const [showSessionSummary, setShowSessionSummary] = useState(false);
+
   // Save manual queue to localStorage
   useEffect(() => {
     localStorage.setItem('smartads-manual-queue', JSON.stringify(manualQueue));
@@ -100,8 +110,15 @@ const SmartAdsSystem = () => {
   const lastDemographicsRef = useRef<DemographicCounts>({ male: 0, female: 0, kid: 0, young: 0, adult: 0 });
   const testModeTimeoutRef = useRef<number | null>(null);
   
-  // Advanced face tracking with Kalman-style smoothing
+  // Advanced face tracking with temporal stabilization
   const trackedFacesRef = useRef<Map<string, TrackedFace>>(new Map());
+  
+  // Capture session aggregation - tracks unique viewers across capture window
+  const captureSessionRef = useRef<{
+    startedAt: number;
+    frameCount: number;
+    viewers: Map<string, ViewerAggregate>;
+  } | null>(null);
   
   // Tracking config based on mode
   const trackingConfig = useMemo(() => {
@@ -217,7 +234,14 @@ const SmartAdsSystem = () => {
 
     // Clear tracking cache on new detection session
     trackedFacesRef.current.clear();
-    const now = Date.now();
+    
+    // Initialize capture session for aggregation
+    captureSessionRef.current = {
+      startedAt: Date.now(),
+      frameCount: 0,
+      viewers: new Map(),
+    };
+    setShowSessionSummary(false);
 
     captureIntervalRef.current = window.setInterval(async () => {
       if (!isCapturingRef.current || !videoRef.current) return;
@@ -228,6 +252,11 @@ const SmartAdsSystem = () => {
       const tracked = trackedFacesRef.current;
       const currentTime = Date.now();
       const config = trackingConfig;
+      
+      // Increment frame count for session
+      if (captureSessionRef.current) {
+        captureSessionRef.current.frameCount++;
+      }
       
       // Match new detections to tracked faces using IoU + distance
       const matchedIds = new Set<string>();
@@ -276,6 +305,20 @@ const SmartAdsSystem = () => {
           const newVx = (detection.boundingBox!.x - trackedFace.boundingBox.x);
           const newVy = (detection.boundingBox!.y - trackedFace.boundingBox.y);
           
+          // Temporal voting: only add votes if confidence is high enough
+          const newGenderVotes = { ...trackedFace.genderVotes };
+          const newAgeVotes = { ...trackedFace.ageVotes };
+          
+          if (detection.confidence >= MIN_VOTE_CONFIDENCE) {
+            const voteWeight = detection.confidence * Math.min(detection.faceScore, 1);
+            newGenderVotes[detection.gender] += voteWeight;
+            newAgeVotes[detection.ageGroup] += voteWeight;
+          }
+          
+          // Calculate stable gender/age from votes
+          const stableGender = getStableGender(newGenderVotes);
+          const stableAgeGroup = getStableAgeGroup(newAgeVotes);
+          
           tracked.set(id, {
             ...trackedFace,
             boundingBox: {
@@ -296,7 +339,46 @@ const SmartAdsSystem = () => {
             missedFrames: 0,
             lastSeenAt: currentTime,
             detectorUsed: detection.trackingId?.startsWith('ssd') ? 'ssd' : 'tiny',
+            genderVotes: newGenderVotes,
+            ageVotes: newAgeVotes,
+            stableGender,
+            stableAgeGroup,
           });
+          
+          // Update capture session aggregation
+          if (captureSessionRef.current && trackedFace.consecutiveHits >= config.minConsecutiveFrames) {
+            const session = captureSessionRef.current;
+            const existing = session.viewers.get(id);
+            
+            if (existing) {
+              // Update existing viewer aggregate
+              if (detection.confidence >= MIN_VOTE_CONFIDENCE) {
+                existing.genderVotes[detection.gender] += detection.confidence;
+                existing.ageVotes[detection.ageGroup] += detection.confidence;
+              }
+              existing.seenFrames++;
+              existing.bestFaceScore = Math.max(existing.bestFaceScore, detection.faceScore);
+              existing.bestConfidence = Math.max(existing.bestConfidence, detection.confidence);
+              existing.finalGender = getStableGender(existing.genderVotes);
+              existing.finalAgeGroup = getStableAgeGroup(existing.ageVotes);
+            } else {
+              // New viewer in session
+              session.viewers.set(id, {
+                trackingId: id,
+                genderVotes: { male: detection.gender === 'male' ? detection.confidence : 0, female: detection.gender === 'female' ? detection.confidence : 0 },
+                ageVotes: { 
+                  kid: detection.ageGroup === 'kid' ? detection.confidence : 0, 
+                  young: detection.ageGroup === 'young' ? detection.confidence : 0, 
+                  adult: detection.ageGroup === 'adult' ? detection.confidence : 0 
+                },
+                seenFrames: 1,
+                bestFaceScore: detection.faceScore,
+                bestConfidence: detection.confidence,
+                finalGender: detection.gender,
+                finalAgeGroup: detection.ageGroup,
+              });
+            }
+          }
         }
       }
       
@@ -306,6 +388,16 @@ const SmartAdsSystem = () => {
         
         const detection = results[i];
         const newId = `face_${currentTime}_${Math.random().toString(36).substr(2, 5)}`;
+        
+        // Initialize with votes from first detection
+        const initialGenderVotes = { male: 0, female: 0 };
+        const initialAgeVotes = { kid: 0, young: 0, adult: 0 };
+        
+        if (detection.confidence >= MIN_VOTE_CONFIDENCE) {
+          const voteWeight = detection.confidence * Math.min(detection.faceScore, 1);
+          initialGenderVotes[detection.gender] = voteWeight;
+          initialAgeVotes[detection.ageGroup] = voteWeight;
+        }
         
         tracked.set(newId, {
           id: newId,
@@ -320,6 +412,10 @@ const SmartAdsSystem = () => {
           firstSeenAt: currentTime,
           lastSeenAt: currentTime,
           detectorUsed: detection.trackingId?.startsWith('ssd') ? 'ssd' : 'tiny',
+          genderVotes: initialGenderVotes,
+          ageVotes: initialAgeVotes,
+          stableGender: detection.gender,
+          stableAgeGroup: detection.ageGroup,
         });
       }
       
@@ -341,7 +437,7 @@ const SmartAdsSystem = () => {
         }
       }
       
-      // Get stable detections (consecutive hits >= threshold)
+      // Get stable detections (consecutive hits >= threshold) - uses temporal voting
       const stableViewers = Array.from(tracked.values())
         .filter(face => face.consecutiveHits >= config.minConsecutiveFrames)
         .map(toDetectionResult);
@@ -350,7 +446,7 @@ const SmartAdsSystem = () => {
       setCurrentViewers(stableViewers);
       
       if (stableViewers.length > 0) {
-        // Calculate demographics from stable detections
+        // Calculate demographics from stable detections (using stabilized gender/age)
         const newDemographics: DemographicCounts = {
           male: stableViewers.filter(d => d.gender === 'male').length,
           female: stableViewers.filter(d => d.gender === 'female').length,
@@ -519,11 +615,52 @@ const SmartAdsSystem = () => {
       
       addLog('webcam', `📷 CAPTURE ENDED`);
       
-      // Log and reorder based on detected demographics
-      const demo = lastDemographicsRef.current;
-      if (demo.male + demo.female > 0) {
-        addLog('info', `📊 Detected: ${demo.male}M/${demo.female}F, ${demo.kid} kid/${demo.young} young/${demo.adult} adult`);
-        reorderQueue(demo);
+      // Build session summary from aggregated viewers
+      if (captureSessionRef.current) {
+        const session = captureSessionRef.current;
+        
+        // Filter viewers who were seen in enough frames (reduces false positives)
+        const stableViewers = Array.from(session.viewers.values())
+          .filter(v => v.seenFrames >= MIN_FRAMES_FOR_SESSION);
+        
+        // Calculate demographics from session summary (unique viewers, not per-frame counts)
+        const sessionDemographics: DemographicCounts = {
+          male: stableViewers.filter(v => v.finalGender === 'male').length,
+          female: stableViewers.filter(v => v.finalGender === 'female').length,
+          kid: stableViewers.filter(v => v.finalAgeGroup === 'kid').length,
+          young: stableViewers.filter(v => v.finalAgeGroup === 'young').length,
+          adult: stableViewers.filter(v => v.finalAgeGroup === 'adult').length,
+        };
+        
+        // Create summary for display
+        const summary: CaptureSessionSummary = {
+          startedAt: session.startedAt,
+          endedAt: Date.now(),
+          totalFrames: session.frameCount,
+          uniqueViewers: stableViewers.length,
+          demographics: sessionDemographics,
+          viewers: stableViewers,
+        };
+        
+        setLastSessionSummary(summary);
+        setShowSessionSummary(true);
+        
+        // Log session summary
+        addLog('info', `📊 Session Summary: ${stableViewers.length} unique viewers over ${session.frameCount} frames`);
+        addLog('info', `📊 Demographics: ${sessionDemographics.male}M/${sessionDemographics.female}F, ${sessionDemographics.kid} kid/${sessionDemographics.young} young/${sessionDemographics.adult} adult`);
+        
+        // Reorder queue based on session summary (not last frame)
+        if (sessionDemographics.male + sessionDemographics.female > 0) {
+          reorderQueue(sessionDemographics);
+        }
+        
+        // Clear session
+        captureSessionRef.current = null;
+        
+        // Auto-hide summary after 8 seconds
+        setTimeout(() => {
+          setShowSessionSummary(false);
+        }, 8000);
       }
     }
   }, [currentTime, currentAd, isPlaying, manualMode, startWebcam, stopWebcam, startDetectionLoop, stopDetectionLoop, addLog, reorderQueue]);
@@ -817,6 +954,12 @@ const SmartAdsSystem = () => {
 
         {/* Right Column - Stats & Queue */}
         <div className="lg:col-span-5 space-y-6">
+          {/* Session Summary - shown after capture ends */}
+          <CaptureSessionSummaryComponent
+            summary={lastSessionSummary}
+            isVisible={showSessionSummary}
+          />
+          
           <DemographicStats
             demographics={demographics}
             recentDetections={currentViewers}
