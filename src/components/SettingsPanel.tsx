@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Settings, Percent, Eye, Zap, MonitorPlay, BarChart3 } from 'lucide-react';
+import { Settings, Percent, Eye, Zap, MonitorPlay, BarChart3, HelpCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
@@ -18,6 +18,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 export type DetectionMode = 'fast' | 'accurate' | 'max';
 export type VideoQuality = 'hd' | 'lowQuality' | 'nightIR' | 'crowd';
@@ -40,12 +46,28 @@ interface CaptureSettings {
   requireFaceTexture: boolean;
   /** Use dual model (TinyFace + SSD) for video files. */
   useDualModelForVideo: boolean;
+  /** Enable YOLO detection for video files. */
+  enableYoloForVideo: boolean;
 }
 
 interface SettingsPanelProps {
   settings: CaptureSettings;
   onSettingsChange: (settings: CaptureSettings) => void;
 }
+
+// Helper component for info tooltips
+const InfoTooltip = ({ text }: { text: string }) => (
+  <TooltipProvider>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help ml-1" />
+      </TooltipTrigger>
+      <TooltipContent className="max-w-[250px] text-xs">
+        <p>{text}</p>
+      </TooltipContent>
+    </Tooltip>
+  </TooltipProvider>
+);
 
 export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps) => {
   const [localSettings, setLocalSettings] = useState(settings);
@@ -90,7 +112,7 @@ export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps
         <DialogHeader>
           <DialogTitle className="font-display">System Settings</DialogTitle>
           <DialogDescription>
-            Configure detection mode, sensitivity, and capture window.
+            Configure detection mode, sensitivity, and capture window. Hover over <HelpCircle className="h-3 w-3 inline" /> for explanations.
           </DialogDescription>
         </DialogHeader>
 
@@ -100,6 +122,7 @@ export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps
             <Label className="flex items-center gap-2">
               <Zap className="h-4 w-4 text-accent" />
               Detection Mode
+              <InfoTooltip text="How hard the system tries to find faces. 'Fast' = quick but may miss some. 'Accurate' = balanced for CCTV. 'Maximum' = catches everyone but slower." />
             </Label>
             <Select
               value={localSettings.detectionMode}
@@ -114,6 +137,9 @@ export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps
                 <SelectItem value="max">Maximum (Crowd)</SelectItem>
               </SelectContent>
             </Select>
+            <p className="text-xs text-muted-foreground">
+              🎯 Fast = webcam chats, Accurate = security cameras, Maximum = busy public spaces
+            </p>
           </div>
 
           {/* Video Quality */}
@@ -121,6 +147,7 @@ export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps
             <Label className="flex items-center gap-2">
               <MonitorPlay className="h-4 w-4 text-primary" />
               Video Quality Preset
+              <InfoTooltip text="Tell the system what kind of camera you're using. Pick 'Low Quality CCTV' for old security cameras, 'Night/IR' for dark footage, 'Crowd' for busy scenes." />
             </Label>
             <Select
               value={localSettings.videoQuality}
@@ -136,6 +163,9 @@ export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps
                 <SelectItem value="crowd">Crowd Detection</SelectItem>
               </SelectContent>
             </Select>
+            <p className="text-xs text-muted-foreground">
+              📹 Helps the system adjust processing for your camera type
+            </p>
           </div>
 
           {/* Sensitivity */}
@@ -144,6 +174,7 @@ export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps
               <Label className="flex items-center gap-2">
                 <Eye className="h-4 w-4 text-primary" />
                 Sensitivity
+                <InfoTooltip text="Higher number = finds more faces but might see faces that aren't there (walls, objects). Lower = fewer mistakes but may miss small/far faces." />
               </Label>
               <span className="text-sm text-primary font-bold">
                 {(1 - localSettings.detectionSensitivity).toFixed(2)}
@@ -154,6 +185,9 @@ export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps
               onValueChange={handleSensitivityChange}
               min={0.2} max={0.6} step={0.05}
             />
+            <p className="text-xs text-muted-foreground">
+              🔍 Low value = strict (only obvious faces) | High value = loose (catches blurry/small faces)
+            </p>
           </div>
 
           {/* False Positive Guard */}
@@ -162,6 +196,7 @@ export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps
               <Label className="flex items-center gap-2">
                 <Eye className="h-4 w-4 text-muted-foreground" />
                 False Positive Guard
+                <InfoTooltip text="Stops the system from thinking walls, paintings, or objects are faces. Higher = stricter checking, fewer ghost faces but might miss real ones." />
               </Label>
               <span className="text-sm font-bold text-muted-foreground">
                 {localSettings.falsePositiveMinScore.toFixed(2)}
@@ -173,7 +208,7 @@ export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps
               min={0.10} max={0.35} step={0.02}
             />
             <p className="text-xs text-muted-foreground">
-              Higher = fewer wall/sky detections, but may miss small/blurred faces.
+              🚫 Increase if you see "ghost" detections on walls or objects
             </p>
           </div>
 
@@ -183,6 +218,7 @@ export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps
               <Label className="flex items-center gap-2">
                 <Eye className="h-4 w-4 text-accent" />
                 Demographic Confidence
+                <InfoTooltip text="How sure the system must be before counting someone as male/female/kid/adult. Higher = only count faces where we're very confident about who they are." />
               </Label>
               <span className="text-sm font-bold text-accent">
                 {(localSettings.minDemographicConfidence * 100).toFixed(0)}%
@@ -194,7 +230,7 @@ export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps
               min={0.55} max={0.90} step={0.05}
             />
             <p className="text-xs text-muted-foreground">
-              Detections below this confidence won’t be counted as male/female/kid/young/adult.
+              📊 Only faces above this confidence get counted in demographics
             </p>
           </div>
 
@@ -204,6 +240,7 @@ export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps
               <Label className="flex items-center gap-2">
                 <Eye className="h-4 w-4 text-pink-500" />
                 Female Boost Factor
+                <InfoTooltip text="The AI tends to guess 'male' too often. This slider helps balance it out. Higher = more likely to classify uncertain faces as female. Try 0.10-0.20 for most footage." />
               </Label>
               <span className="text-sm font-bold text-pink-500">
                 {localSettings.femaleBoostFactor.toFixed(2)}
@@ -215,19 +252,20 @@ export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps
               min={0} max={0.30} step={0.05}
             />
             <p className="text-xs text-muted-foreground">
-              Counters male bias in uncertain detections. Higher = more likely to classify as female.
+              ⚖️ Counters AI's male bias. Increase if too many women are classified as men.
             </p>
           </div>
 
           {/* Hair Heuristics Toggle */}
           <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border">
-            <div className="space-y-0.5">
+            <div className="space-y-0.5 flex-1">
               <Label className="flex items-center gap-2">
                 <Eye className="h-4 w-4" />
                 Hair Detection Heuristics
+                <InfoTooltip text="Uses hair length as a clue for gender. If someone has long hair extending past their shoulders, they're more likely female. Turn on for better female detection." />
               </Label>
               <p className="text-xs text-muted-foreground">
-                Use hair length analysis for gender hints
+                💇 Analyzes hair region above face to help with gender
               </p>
             </div>
             <input
@@ -240,32 +278,34 @@ export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps
 
           {/* Face Texture Toggle */}
           <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border">
-            <div className="space-y-0.5">
+            <div className="space-y-0.5 flex-1">
               <Label className="flex items-center gap-2">
                 <Eye className="h-4 w-4" />
                 Require Face Texture
+                <InfoTooltip text="Checks if the detection looks like real skin with natural variations. Helps filter out walls, flat surfaces, and uniform-colored objects that look like faces." />
               </Label>
               <p className="text-xs text-muted-foreground">
-                Filter out walls/uniform surfaces (reduces false positives)
+                🧱 Rejects flat/uniform surfaces (walls, paintings)
               </p>
             </div>
             <input
               type="checkbox"
               checked={localSettings.requireFaceTexture}
               onChange={(e) => setLocalSettings(prev => ({ ...prev, requireFaceTexture: e.target.checked }))}
-            className="h-4 w-4 rounded border-gray-300"
-          />
-        </div>
+              className="h-4 w-4 rounded border-gray-300"
+            />
+          </div>
 
           {/* Dual Model for Video Toggle */}
           <div className="flex items-center justify-between p-3 rounded-lg bg-primary/5 border border-primary/20">
-            <div className="space-y-0.5">
+            <div className="space-y-0.5 flex-1">
               <Label className="flex items-center gap-2">
                 <Zap className="h-4 w-4 text-primary" />
                 Dual Model (Video)
+                <InfoTooltip text="Uses two AI models together (TinyFace for speed + SSD MobileNet for accuracy) when processing video files. Catches more faces but runs slower." />
               </Label>
               <p className="text-xs text-muted-foreground">
-                Use TinyFace + SSD MobileNet for video files (more accurate)
+                🔄 TinyFace + SSD MobileNet for maximum detection
               </p>
             </div>
             <input
@@ -276,28 +316,51 @@ export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps
             />
           </div>
 
+          {/* YOLO for Video Toggle */}
+          <div className="flex items-center justify-between p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
+            <div className="space-y-0.5 flex-1">
+              <Label className="flex items-center gap-2">
+                <Zap className="h-4 w-4 text-yellow-600" />
+                Enable YOLO (Video)
+                <InfoTooltip text="Uses YOLOv8-face model specifically designed for face detection in crowds. Best for CCTV footage with many people. Requires model file at /models/yolov8-face/model.json" />
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                🎯 YOLOv8-face for crowd/CCTV detection (if model available)
+              </p>
+            </div>
+            <input
+              type="checkbox"
+              checked={localSettings.enableYoloForVideo}
+              onChange={(e) => setLocalSettings(prev => ({ ...prev, enableYoloForVideo: e.target.checked }))}
+              className="h-4 w-4 rounded border-gray-300"
+            />
+          </div>
+
           {/* Capture Window */}
-          <div className="space-y-3">
+          <div className="space-y-3 p-3 rounded-lg bg-muted/30 border border-border">
+            <Label className="flex items-center gap-2">
+              <Percent className="h-4 w-4 text-primary" />
+              Capture Window
+              <InfoTooltip text="During ad playback, the camera only captures viewers during this portion of the video. Set 60%-100% to capture during the last 40% of each ad." />
+            </Label>
+            <p className="text-xs text-muted-foreground mb-2">
+              📷 When to scan for viewers during each ad (e.g., 60%-100% = last 40%)
+            </p>
+            
             <div className="flex items-center justify-between">
-              <Label>Capture Start</Label>
+              <Label className="text-xs">Start</Label>
               <span className="text-sm text-primary font-bold">{localSettings.startPercent}%</span>
             </div>
             <Slider value={[localSettings.startPercent]} onValueChange={handleStartChange} min={10} max={90} step={5} />
             
             <div className="flex items-center justify-between">
-              <Label>Capture End</Label>
+              <Label className="text-xs">End</Label>
               <span className="text-sm text-accent font-bold">{localSettings.endPercent}%</span>
             </div>
             <Slider value={[localSettings.endPercent]} onValueChange={handleEndChange} min={20} max={98} step={2} />
-          </div>
-
-          {/* Preview */}
-          <div className="bg-muted rounded-lg p-3 space-y-2">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <Percent className="h-4 w-4 text-primary" />
-              Capture Window
-            </div>
-            <div className="relative h-2 bg-background rounded-full overflow-hidden">
+            
+            {/* Preview */}
+            <div className="relative h-2 bg-background rounded-full overflow-hidden mt-2">
               <div 
                 className="absolute h-full bg-gradient-to-r from-primary to-accent"
                 style={{ left: `${localSettings.startPercent}%`, width: `${localSettings.endPercent - localSettings.startPercent}%` }}
@@ -316,6 +379,9 @@ export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps
               <BarChart3 className="h-4 w-4" />
               Open Model Evaluation Dashboard
             </a>
+            <p className="text-xs text-muted-foreground mt-1">
+              📈 View detection accuracy metrics and confusion matrices
+            </p>
           </div>
         </div>
 

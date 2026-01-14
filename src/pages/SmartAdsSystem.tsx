@@ -42,6 +42,7 @@ const SmartAdsSystem = () => {
     enableHairHeuristics: true,
     requireFaceTexture: true,
     useDualModelForVideo: true,
+    enableYoloForVideo: false,
   });
 
   // Labeling mode for evaluation
