@@ -8,6 +8,7 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import LandingPage from "./pages/LandingPage";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
+import ModelEvaluation from "./pages/ModelEvaluation";
 
 const queryClient = new QueryClient();
 
@@ -22,6 +23,7 @@ const App = () => (
             <Routes>
               <Route path="/" element={<LandingPage />} />
               <Route path="/dashboard" element={<Index />} />
+              <Route path="/admin/evaluation" element={<ModelEvaluation />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>

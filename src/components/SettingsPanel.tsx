@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Settings, Percent, Eye, Zap, MonitorPlay } from 'lucide-react';
+import { Settings, Percent, Eye, Zap, MonitorPlay, BarChart3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
@@ -32,6 +32,12 @@ interface CaptureSettings {
   falsePositiveMinScore: number;
   /** Minimum gender/age confidence to be counted in demographics + session summary. */
   minDemographicConfidence: number;
+  /** Female boost factor to counter male bias (0-0.3). */
+  femaleBoostFactor: number;
+  /** Enable hair-based gender heuristics. */
+  enableHairHeuristics: boolean;
+  /** Require face texture variation (filters walls/uniform surfaces). */
+  requireFaceTexture: boolean;
 }
 
 interface SettingsPanelProps {
@@ -190,6 +196,65 @@ export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps
             </p>
           </div>
 
+          {/* Female Boost Factor */}
+          <div className="space-y-2 p-3 rounded-lg bg-pink-500/10 border border-pink-500/20">
+            <div className="flex items-center justify-between">
+              <Label className="flex items-center gap-2">
+                <Eye className="h-4 w-4 text-pink-500" />
+                Female Boost Factor
+              </Label>
+              <span className="text-sm font-bold text-pink-500">
+                {localSettings.femaleBoostFactor.toFixed(2)}
+              </span>
+            </div>
+            <Slider
+              value={[localSettings.femaleBoostFactor]}
+              onValueChange={(v) => setLocalSettings(prev => ({ ...prev, femaleBoostFactor: v[0] }))}
+              min={0} max={0.30} step={0.05}
+            />
+            <p className="text-xs text-muted-foreground">
+              Counters male bias in uncertain detections. Higher = more likely to classify as female.
+            </p>
+          </div>
+
+          {/* Hair Heuristics Toggle */}
+          <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border">
+            <div className="space-y-0.5">
+              <Label className="flex items-center gap-2">
+                <Eye className="h-4 w-4" />
+                Hair Detection Heuristics
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Use hair length analysis for gender hints
+              </p>
+            </div>
+            <input
+              type="checkbox"
+              checked={localSettings.enableHairHeuristics}
+              onChange={(e) => setLocalSettings(prev => ({ ...prev, enableHairHeuristics: e.target.checked }))}
+              className="h-4 w-4 rounded border-gray-300"
+            />
+          </div>
+
+          {/* Face Texture Toggle */}
+          <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border">
+            <div className="space-y-0.5">
+              <Label className="flex items-center gap-2">
+                <Eye className="h-4 w-4" />
+                Require Face Texture
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Filter out walls/uniform surfaces (reduces false positives)
+              </p>
+            </div>
+            <input
+              type="checkbox"
+              checked={localSettings.requireFaceTexture}
+              onChange={(e) => setLocalSettings(prev => ({ ...prev, requireFaceTexture: e.target.checked }))}
+              className="h-4 w-4 rounded border-gray-300"
+            />
+          </div>
+
           {/* Capture Window */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -217,6 +282,19 @@ export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps
                 style={{ left: `${localSettings.startPercent}%`, width: `${localSettings.endPercent - localSettings.startPercent}%` }}
               />
             </div>
+          </div>
+
+          {/* Evaluation Dashboard Link */}
+          <div className="p-3 rounded-lg bg-muted/50 border border-border">
+            <a 
+              href="/admin/evaluation" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-sm text-primary hover:underline flex items-center gap-2"
+            >
+              <BarChart3 className="h-4 w-4" />
+              Open Model Evaluation Dashboard
+            </a>
           </div>
         </div>
 
