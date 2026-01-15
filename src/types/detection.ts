@@ -81,6 +81,10 @@ export interface CCTVDetectionConfig {
 
   // Debug
   debugMode: boolean;
+  
+  // Additional settings from SettingsPanel (passed through)
+  detectionMode?: 'fast' | 'accurate' | 'max';
+  videoQuality?: 'hd' | 'lowQuality' | 'nightIR' | 'crowd';
 }
 
 export const DEFAULT_CCTV_CONFIG: CCTVDetectionConfig = {
