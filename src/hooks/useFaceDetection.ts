@@ -499,8 +499,11 @@ export const useFaceDetection = (
       // Use lower threshold for detection to get more raw faces
       const detectionThreshold = Math.max(config.sensitivity - 0.05, 0.15);
       
+      // Always log detector config for debugging
+      console.log(`[Detection] Config: detector=${config.detector}, ssdLoaded=${ssdLoaded}, sourceMode=${sourceMode}, isCCTV=${isCCTV}`);
+      
       if (config.debugMode) {
-        console.log(`[Detection] Config: sensitivity=${config.sensitivity}, threshold=${detectionThreshold.toFixed(2)}, minScore=${config.minFaceScore}`);
+        console.log(`[Detection] Full config: sensitivity=${config.sensitivity}, threshold=${detectionThreshold.toFixed(2)}, minScore=${config.minFaceScore}`);
       }
 
       // ========== PASS 1: Multi-scale detection for maximum coverage ==========
@@ -511,10 +514,9 @@ export const useFaceDetection = (
       const isDualMode = config.detector === 'dual' && ssdLoaded;
       const useSsdOnly = config.detector === 'ssd' && ssdLoaded;
       
-      if (config.debugMode) {
-        const modeLabel = isDualMode ? 'DUAL (Tiny+SSD)' : useSsdOnly ? 'SSD' : 'Tiny';
-        console.log(`[Detection] Pass 1: ${modeLabel} mode, scales [${pass1Scales.join(', ')}] @ threshold ${pass1Threshold.toFixed(2)}`);
-      }
+      // Log the actual mode being used
+      const modeLabel = isDualMode ? 'DUAL (Tiny+SSD)' : useSsdOnly ? 'SSD' : 'Tiny';
+      console.log(`[Detection] Pass 1: ${modeLabel} mode, scales [${pass1Scales.join(', ')}] @ threshold ${pass1Threshold.toFixed(2)}`);
       
       // Try all scales in parallel for maximum detection
       const allPass1Detections = await Promise.all(
@@ -556,10 +558,8 @@ export const useFaceDetection = (
       const mergedPass1 = mergeDetections(allPass1Detections.flat(), videoWidth, videoHeight);
       detections = mergedPass1;
       
-      if (config.debugMode || detections.length > 0) {
-        const modeLabel = isDualMode ? 'DUAL' : detectorUsed === 'ssd' ? 'SSD' : 'Tiny';
-        console.log(`[Detection] Pass 1 (${modeLabel}) found`, detections.length, 'faces from', allPass1Detections.flat().length, 'raw');
-      }
+      // Log using the configured mode (not detectorUsed which only tracks individual detector calls)
+      console.log(`[Detection] Pass 1 (${modeLabel}) found`, detections.length, 'faces from', allPass1Detections.flat().length, 'raw');
 
       // ========== PASS 2: CCTV rescue with aggressive preprocessing + upscale ==========
       if (detections.length < 3 && isCCTV && config.detector !== 'tiny') {
