@@ -85,6 +85,14 @@ export interface CCTVDetectionConfig {
   // Additional settings from SettingsPanel (passed through)
   detectionMode?: 'fast' | 'accurate' | 'max';
   videoQuality?: 'hd' | 'lowQuality' | 'nightIR' | 'crowd';
+  
+  // Bias correction settings
+  femaleBoostFactor?: number;
+  enableHairHeuristics?: boolean;
+  requireFaceTexture?: boolean;
+  
+  // Enhanced rescue passes (Pass 2/3) for difficult CCTV footage
+  enableEnhancedRescue?: boolean;
 }
 
 export const DEFAULT_CCTV_CONFIG: CCTVDetectionConfig = {

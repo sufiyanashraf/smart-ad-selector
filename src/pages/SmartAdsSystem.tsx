@@ -149,19 +149,16 @@ const SmartAdsSystem = () => {
     stopWebcam 
   } = useWebcam();
   
-  // Determine effective model selection based on input mode AND user settings
+  // Determine effective model selection based on input mode
   const isVideoMode = inputMode === 'video' || inputMode === 'screen';
   const isWebcamMode = inputMode === 'webcam';
   
-  // For video: ALWAYS use dual mode (forced), user can toggle enhanced
-  // For webcam: ALWAYS use tiny only (forced) to prevent ghost detections
-  const effectiveDualModel = isVideoMode; // Forced on for video
-  const effectiveEnhanced = isVideoMode && captureSettings.enableYoloForVideo; // SSD as primary
-  
-  // Determine detector type
-  const effectiveDetector = isWebcamMode 
-    ? 'tiny' 
-    : (effectiveEnhanced ? 'ssd' : 'dual');
+  // STRICT ENFORCEMENT:
+  // - Webcam: ALWAYS tiny only (prevents ghost detections)
+  // - Video/Screen: ALWAYS dual mode (Tiny + SSD for best coverage)
+  // The "Enhanced Detection" toggle only affects Pass 2/3 rescue behavior, NOT detector type
+  const effectiveDetector: 'tiny' | 'dual' | 'ssd' = isWebcamMode ? 'tiny' : 'dual';
+  const effectiveCctvMode = isVideoMode ? true : cctvMode; // Force CCTV mode for video
 
   const { 
     isModelLoaded, 
@@ -176,19 +173,27 @@ const SmartAdsSystem = () => {
     captureSettings.detectionSensitivity,
     {
       sourceMode: inputMode,
-      cctvMode,
-      useDualModel: effectiveDualModel,
-      useYolo: false, // YOLO not implemented, using SSD as enhanced
+      cctvMode: effectiveCctvMode,
+      useDualModel: isVideoMode, // Force dual for video
+      useYolo: false, // YOLO not implemented
       config: {
         debugMode,
         hardMinFaceScore: captureSettings.falsePositiveMinScore,
-        detector: effectiveDetector,
-        // Pass detection mode for preprocessing adjustments
+        detector: effectiveDetector, // Strictly enforced per input mode
         detectionMode: captureSettings.detectionMode,
         videoQuality: captureSettings.videoQuality,
+        // Pass female boost and heuristics settings
+        femaleBoostFactor: captureSettings.femaleBoostFactor,
+        enableHairHeuristics: captureSettings.enableHairHeuristics,
+        requireFaceTexture: captureSettings.requireFaceTexture,
+        // Enable enhanced rescue passes for video when toggle is on
+        enableEnhancedRescue: isVideoMode && captureSettings.enableYoloForVideo,
       },
     }
   );
+  
+  // Get current active detector label for UI
+  const activeDetectorLabel = isWebcamMode ? 'Tiny' : (ssdLoaded ? 'Dual' : 'Tiny');
   
   const { queue, logs, getNextAd, reorderQueue, addLog, updateQueue, resetManualQueueIndex } = useAdQueue({
     customAds: adsWithCaptureWindows,
@@ -553,10 +558,13 @@ const SmartAdsSystem = () => {
     setTestMode(true);
     addLog('info', `🧪 TEST MODE: Starting ${sourceName} detection (continuous)...`);
     
-    // Auto-enable CCTV mode for video files
-    if (sourceName.includes('Video')) {
+    // Auto-enable CCTV mode for video/screen files (webcam forces it off)
+    if (sourceName.includes('Video') || sourceName.includes('Screen')) {
       setCctvMode(true);
-      addLog('info', '📹 CCTV Mode auto-enabled for video file');
+      addLog('info', `📹 CCTV Mode auto-enabled for ${sourceName}`);
+    } else {
+      // Webcam: force CCTV mode off to reduce ghost detections
+      setCctvMode(false);
     }
     
     // Reset demographics
@@ -670,6 +678,9 @@ const SmartAdsSystem = () => {
     
     // Save back
     localStorage.setItem(storageKey, JSON.stringify(sessions));
+    
+    // Dispatch event so Evaluation page can auto-refresh
+    window.dispatchEvent(new CustomEvent('smartads-evaluation-updated'));
     
     // CORRECTION: Apply the label to the live tracked face
     if (entry.trackingId && trackedFacesRef.current.has(entry.trackingId)) {
@@ -1060,7 +1071,7 @@ const SmartAdsSystem = () => {
                 <>
                   <CheckCircle className="h-4 w-4 text-success" />
                   <span className="text-success">
-                    AI Ready {ssdLoaded ? '(Dual)' : '(Tiny)'} • {backend?.toUpperCase()}
+                    AI Ready ({activeDetectorLabel}) • {backend?.toUpperCase()}
                   </span>
                 </>
               ) : (
