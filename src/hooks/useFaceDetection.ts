@@ -7,6 +7,7 @@ const DETECTION_TIMEOUT = 10000;
 import { DetectionResult, FaceBoundingBox } from '@/types/ad';
 import { DetectionDebugInfo, CCTVDetectionConfig, DEFAULT_CCTV_CONFIG, DEFAULT_WEBCAM_CONFIG } from '@/types/detection';
 import { createPreprocessedCanvas, PreprocessingOptions, ROIConfig } from '@/utils/imagePreprocessing';
+import { hasTextureVariation, applyFemaleBoost, analyzeHairRegion } from '@/utils/genderHeuristics';
 
 // Use local models from public folder - no CORS issues
 const MODEL_URL = '/models';
@@ -336,7 +337,7 @@ export const useFaceDetection = (
     return createPreprocessedCanvas(videoElement, preprocessing, scale, roi);
   }, []);
 
-  // Filter and process raw detections
+  // Filter and process raw detections with bias correction
   const processDetections = useCallback((
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     detections: any[],
@@ -346,21 +347,26 @@ export const useFaceDetection = (
     config: CCTVDetectionConfig,
     detectorUsed: 'tiny' | 'ssd',
     roiOffset?: { x: number; y: number },
-    debugMode: boolean = false
+    debugMode: boolean = false,
+    textureCheckCanvas?: HTMLCanvasElement | null
   ): { results: DetectionResult[]; rawCount: number; filteredCount: number } => {
     const rawCount = detections.length;
     
-    // Use the LOWER of minFaceScore and sensitivity to avoid filtering too strictly
-    const effectiveMinScore = Math.min(config.minFaceScore, config.sensitivity);
-    // Optional hard floor to reduce false positives (walls/sky)
-    const hardMinScore = config.hardMinFaceScore ?? 0;
-    const requiredMinScore = Math.max(effectiveMinScore, hardMinScore);
+    // STRICTER threshold calculation to reduce ghost detections
+    // hardMinFaceScore acts as an absolute floor
+    const hardMinScore = config.hardMinFaceScore ?? 0.15;
+    // sensitivity and minFaceScore must both be satisfied
+    const requiredMinScore = Math.max(hardMinScore, config.minFaceScore, config.sensitivity * 0.8);
 
     if (debugMode && rawCount > 0) {
       console.log(
-        `[Filter] Raw: ${rawCount}, minScore: ${requiredMinScore.toFixed(2)} (soft=${effectiveMinScore.toFixed(2)} hard=${hardMinScore.toFixed(2)}), minPx: ${config.minFaceSizePx}, minPct: ${config.minFaceSizePercent}%`
+        `[Filter] Raw: ${rawCount}, requiredMinScore: ${requiredMinScore.toFixed(2)} (hard=${hardMinScore.toFixed(2)} sens=${config.sensitivity.toFixed(2)}), minPx: ${config.minFaceSizePx}`
       );
     }
+
+    const femaleBoostFactor = config.femaleBoostFactor ?? 0;
+    const enableHairHeuristics = config.enableHairHeuristics ?? false;
+    const requireFaceTexture = config.requireFaceTexture ?? false;
 
     const results = detections
       .filter(detection => {
@@ -374,7 +380,7 @@ export const useFaceDetection = (
         const faceX = box.x / scaleBack + (roiOffset?.x ?? 0);
         const faceY = box.y / scaleBack + (roiOffset?.y ?? 0);
 
-        // Filter by face detection score
+        // Filter by face detection score (STRICT)
         if (faceScore < requiredMinScore) {
           if (debugMode) console.log(`[Filter] ❌ Low score: ${faceScore.toFixed(2)} < ${requiredMinScore.toFixed(2)}`);
           return false;
@@ -393,6 +399,12 @@ export const useFaceDetection = (
           return false;
         }
         
+        // Reject overly large detections (walls/sky) - max 35% of frame
+        if (facePercent > 35) {
+          if (debugMode) console.log(`[Filter] ❌ Too large: ${facePercent.toFixed(2)}% > 35% (likely wall/background)`);
+          return false;
+        }
+        
         // Filter by aspect ratio (faces should be roughly square)
         const aspectRatio = faceWidth / faceHeight;
         if (aspectRatio < config.aspectRatioMin || aspectRatio > config.aspectRatioMax) {
@@ -404,6 +416,15 @@ export const useFaceDetection = (
         if (faceX < 0 || faceY < 0 || faceX + faceWidth > videoWidth || faceY + faceHeight > videoHeight) {
           if (debugMode) console.log('[Filter] ❌ Out of bounds');
           return false;
+        }
+        
+        // Texture check to filter out uniform surfaces (walls)
+        if (requireFaceTexture && textureCheckCanvas) {
+          const bbox: FaceBoundingBox = { x: faceX, y: faceY, width: faceWidth, height: faceHeight };
+          if (!hasTextureVariation(textureCheckCanvas, bbox)) {
+            if (debugMode) console.log('[Filter] ❌ No texture variation (uniform surface)');
+            return false;
+          }
         }
         
         if (debugMode) console.log(`[Filter] ✅ PASSED: score=${faceScore.toFixed(2)}, size=${faceWidth.toFixed(0)}x${faceHeight.toFixed(0)}px`);
@@ -432,10 +453,36 @@ export const useFaceDetection = (
           ageGroup = 'adult';
         }
 
+        // Get raw gender prediction
+        let gender = detection.gender as 'male' | 'female';
+        let confidence = detection.genderProbability as number;
+        
+        // Apply female boost at classification time to counter male bias
+        // This can flip uncertain male predictions to female
+        if (femaleBoostFactor > 0) {
+          // Calculate hair score if heuristics enabled and canvas available
+          let hairScore = 0.5; // neutral default
+          if (enableHairHeuristics && textureCheckCanvas) {
+            try {
+              hairScore = analyzeHairRegion(textureCheckCanvas, boundingBox, debugMode);
+            } catch {
+              // ignore errors
+            }
+          }
+          
+          const adjusted = applyFemaleBoost(gender, confidence, femaleBoostFactor, hairScore);
+          gender = adjusted.gender;
+          confidence = adjusted.confidence;
+          
+          if (debugMode && adjusted.gender !== detection.gender) {
+            console.log(`[Bias] Flipped ${detection.gender} → ${adjusted.gender} (boost=${femaleBoostFactor}, hair=${hairScore.toFixed(2)})`);
+          }
+        }
+
         return {
-          gender: detection.gender as 'male' | 'female',
+          gender,
           ageGroup,
-          confidence: detection.genderProbability,
+          confidence,
           faceScore,
           boundingBox,
           trackingId: `${detectorUsed}_${Math.round(boundingBox.x)}_${Math.round(boundingBox.y)}`,
@@ -562,7 +609,17 @@ export const useFaceDetection = (
       console.log(`[Detection] Pass 1 (${modeLabel}) found`, detections.length, 'faces from', allPass1Detections.flat().length, 'raw');
 
       // ========== PASS 2: CCTV rescue with aggressive preprocessing + upscale ==========
-      if (detections.length < 3 && isCCTV && config.detector !== 'tiny') {
+      // Only run if: CCTV mode, not tiny-only, and either few detections OR enhanced rescue enabled
+      const enableEnhancedRescue = config.enableEnhancedRescue ?? false;
+      const shouldRunPass2 = isCCTV && config.detector !== 'tiny' && (detections.length < 3 || enableEnhancedRescue);
+      
+      // Create a canvas for texture checking (used in processDetections)
+      let textureCheckCanvas: HTMLCanvasElement | null = null;
+      if (config.requireFaceTexture) {
+        textureCheckCanvas = createProcessedCanvas(videoElement, { gamma: 1, contrast: 1, sharpen: 0, denoise: false }, 1);
+      }
+      
+      if (shouldRunPass2) {
         passUsed = 2;
         console.log('[Detection] Pass 2: CCTV rescue with aggressive preprocessing...');
         
@@ -586,8 +643,8 @@ export const useFaceDetection = (
           upscaled = config.upscale > 1;
           scaleBack = config.upscale;
 
-          // Run multi-scale on preprocessed canvas
-          const rescueThreshold = Math.max(config.sensitivity - 0.15, 0.08);
+          // Use stricter threshold for rescue passes to reduce false positives
+          const rescueThreshold = Math.max(config.sensitivity - 0.10, 0.12);
           const pass2Scales = [320, 416, 512, 608];
           
           const pass2Detections = await Promise.all(
@@ -625,14 +682,16 @@ export const useFaceDetection = (
       }
       
       // ========== PASS 3: Ultra-low threshold scan for difficult cases ==========
-      // This pass is prone to "wall/sky" false positives, so we:
-      // 1) keep the model threshold ultra-low to *propose* candidates
-      // 2) then require a higher candidate score before merging
-      if (detections.length < 5 && isCCTV) {
+      // Only run if: CCTV mode, not tiny-only, few detections, and enhanced rescue enabled
+      const shouldRunPass3 = isCCTV && config.detector !== 'tiny' && detections.length < 5 && enableEnhancedRescue;
+      
+      if (shouldRunPass3) {
         console.log('[Detection] Pass 3: Ultra-low threshold scan...');
 
-        const ultraLowThreshold = 0.05; // propose candidates
-        const pass3MinCandidateScore = Math.max(config.minFaceScore, 0.18); // accept only stronger candidates
+        const ultraLowThreshold = 0.08; // Slightly higher to reduce wall detections
+        // STRICT: Pass 3 must respect the hard floor
+        const hardFloor = config.hardMinFaceScore ?? 0.15;
+        const pass3MinCandidateScore = Math.max(config.minFaceScore, hardFloor, 0.20);
 
         try {
           // Create maximally enhanced canvas
@@ -658,7 +717,7 @@ export const useFaceDetection = (
                 const score = (det.score ?? 0) as number;
                 const box = det.box;
                 
-                // Must have valid score
+                // Must have valid score - STRICT
                 if (score < pass3MinCandidateScore) return false;
                 
                 // Must have valid bounding box
@@ -671,10 +730,10 @@ export const useFaceDetection = (
                 // Reject if too small (likely noise) or too large (likely wall/background)
                 if (actualWidth < config.minFaceSizePx || actualHeight < config.minFaceSizePx) return false;
                 
-                // Reject if face is larger than 40% of frame (likely false positive on wall/sky)
+                // Reject if face is larger than 30% of frame (stricter - likely false positive)
                 const frameArea = videoWidth * videoHeight;
                 const faceArea = actualWidth * actualHeight;
-                if (faceArea > frameArea * 0.4) return false;
+                if (faceArea > frameArea * 0.30) return false;
                 
                 // Validate aspect ratio
                 const aspectRatio = actualWidth / actualHeight;
@@ -699,7 +758,7 @@ export const useFaceDetection = (
         }
       }
 
-      // Process and filter detections
+      // Process and filter detections with texture checking and bias correction
       const { results, rawCount, filteredCount } = processDetections(
         detections,
         videoWidth,
@@ -708,7 +767,8 @@ export const useFaceDetection = (
         config,
         detectorUsed,
         roiOffset,
-        config.debugMode
+        config.debugMode,
+        textureCheckCanvas
       );
 
       // Update debug info

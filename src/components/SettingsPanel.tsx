@@ -234,7 +234,7 @@ export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps
             <Slider
               value={[localSettings.falsePositiveMinScore]}
               onValueChange={(v) => setLocalSettings(prev => ({ ...prev, falsePositiveMinScore: v[0] }))}
-              min={0.10} max={0.35} step={0.02}
+              min={0.10} max={0.70} step={0.05}
             />
             <p className="text-xs text-muted-foreground">
               🚫 Increase if you see "ghost" detections on walls or objects

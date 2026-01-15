@@ -55,7 +55,7 @@ import {
 
 const STORAGE_KEY = 'smartads-evaluation-sessions';
 const AUTH_KEY = 'smartads-admin-authenticated';
-const ADMIN_PASSCODE = 'smartads2024';
+const ADMIN_PASSCODE = 'smartads1234';
 
 const ModelEvaluation = () => {
   const [sessions, setSessions] = useState<EvaluationSession[]>([]);
@@ -95,22 +95,39 @@ const ModelEvaluation = () => {
   };
 
   // Load sessions from localStorage
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    
+  const loadSessions = useCallback(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       try {
-        const parsed = JSON.parse(saved);
+        const parsed: EvaluationSession[] = JSON.parse(saved);
+        // Sort by createdAt descending (newest first)
+        parsed.sort((a, b) => b.createdAt - a.createdAt);
         setSessions(parsed);
-        if (parsed.length > 0) {
+        if (parsed.length > 0 && !activeSessionId) {
           setActiveSessionId(parsed[0].id);
         }
       } catch {
         console.error('Failed to load evaluation sessions');
       }
     }
-  }, [isAuthenticated]);
+  }, [activeSessionId]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    loadSessions();
+  }, [isAuthenticated, loadSessions]);
+
+  // Listen for evaluation updates from SmartAdsSystem labeling
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    
+    const handleUpdate = () => {
+      loadSessions();
+    };
+    
+    window.addEventListener('smartads-evaluation-updated', handleUpdate);
+    return () => window.removeEventListener('smartads-evaluation-updated', handleUpdate);
+  }, [isAuthenticated, loadSessions]);
 
   // Calculate metrics when active session changes
   useEffect(() => {
