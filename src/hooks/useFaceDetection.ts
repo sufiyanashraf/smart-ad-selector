@@ -521,8 +521,14 @@ export const useFaceDetection = (
 
     const detectionPromise = (async (): Promise<DetectionResult[]> => {
       const config = getConfig();
+      // Read sourceMode directly from options - ensure we use latest value
       const sourceMode = options?.sourceMode ?? 'webcam';
       const isCCTV = options?.cctvMode ?? sourceMode === 'video';
+      
+      // Debug: log actual options values to verify they're updating
+      if (config.debugMode) {
+        console.log(`[Detection] Options check: sourceMode=${sourceMode}, cctvMode=${options?.cctvMode}, useDualModel=${options?.useDualModel}`);
+      }
       
       const videoWidth = videoElement.videoWidth || 640;
       const videoHeight = videoElement.videoHeight || 480;

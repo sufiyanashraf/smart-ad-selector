@@ -74,6 +74,7 @@ export const useWebcam = () => {
       setError(null);
       setInputMode('video');
       setVideoFileName(file.name);
+      console.log('[VideoFile] InputMode set to: video');
       
       // Create object URL for the video file
       const url = URL.createObjectURL(file);

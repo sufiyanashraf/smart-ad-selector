@@ -153,6 +153,11 @@ const SmartAdsSystem = () => {
   const isVideoMode = inputMode === 'video' || inputMode === 'screen';
   const isWebcamMode = inputMode === 'webcam';
   
+  // Debug: Log when input mode changes
+  useEffect(() => {
+    console.log(`[SmartAdsSystem] inputMode changed to: ${inputMode}, isVideoMode=${isVideoMode}, isWebcamMode=${isWebcamMode}`);
+  }, [inputMode, isVideoMode, isWebcamMode]);
+  
   // STRICT ENFORCEMENT:
   // - Webcam: ALWAYS tiny only (prevents ghost detections)
   // - Video/Screen: ALWAYS dual mode (Tiny + SSD for best coverage)
