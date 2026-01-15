@@ -558,11 +558,20 @@ const SmartAdsSystem = () => {
     sourceStarter: () => Promise<boolean>,
     sourceName: string
   ) => {
-    if (testMode) return;
-    
+    // Allow switching sources while already running
+    if (testMode || isCapturingRef.current) {
+      addLog('info', `🔄 Switching source → ${sourceName}`);
+      stopDetectionLoop();
+      stopWebcam();
+      isCapturingRef.current = false;
+      setIsCapturing(false);
+      setTestMode(false);
+      setCurrentViewers([]);
+    }
+
     setTestMode(true);
     addLog('info', `🧪 TEST MODE: Starting ${sourceName} detection (continuous)...`);
-    
+
     // Auto-enable CCTV mode for video/screen files (webcam forces it off)
     if (sourceName.includes('Video') || sourceName.includes('Screen')) {
       setCctvMode(true);
@@ -571,17 +580,17 @@ const SmartAdsSystem = () => {
       // Webcam: force CCTV mode off to reduce ghost detections
       setCctvMode(false);
     }
-    
+
     // Reset demographics
     setDemographics({ male: 0, female: 0, kid: 0, young: 0, adult: 0 });
     setCurrentViewers([]);
-    
+
     const success = await sourceStarter();
     if (success) {
       addLog('webcam', `✅ ${sourceName} activated - runs until manually stopped`);
       isCapturingRef.current = true;
       setIsCapturing(true);
-      
+
       setTimeout(() => {
         startDetectionLoop();
       }, 500);
@@ -589,7 +598,7 @@ const SmartAdsSystem = () => {
       addLog('webcam', `❌ ${sourceName} failed to start`);
       setTestMode(false);
     }
-  }, [testMode, startDetectionLoop, addLog]);
+  }, [testMode, startDetectionLoop, stopDetectionLoop, stopWebcam, addLog]);
 
   // Test mode: manually trigger detection for 30 seconds
   const startTestMode = useCallback(async () => {
