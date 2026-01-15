@@ -222,7 +222,8 @@ export function hasTextureVariation(
     }
     
     const edgeRatio = totalChecked > 0 ? edgeCount / totalChecked : 0;
-    return edgeRatio > 0.1; // At least 10% edge variation
+    // Lowered threshold to 3% - faces have some texture but may not have many sharp edges
+    return edgeRatio > 0.03;
   } catch {
     return true;
   }

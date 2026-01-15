@@ -352,11 +352,12 @@ export const useFaceDetection = (
   ): { results: DetectionResult[]; rawCount: number; filteredCount: number } => {
     const rawCount = detections.length;
     
-    // STRICTER threshold calculation to reduce ghost detections
+    // Threshold calculation - balance between ghost rejection and real face acceptance
     // hardMinFaceScore acts as an absolute floor
     const hardMinScore = config.hardMinFaceScore ?? 0.15;
-    // sensitivity and minFaceScore must both be satisfied
-    const requiredMinScore = Math.max(hardMinScore, config.minFaceScore, config.sensitivity * 0.8);
+    // Use sensitivity as a soft lower bound, not a hard multiplier
+    // This allows faces with scores above sensitivity to pass through
+    const requiredMinScore = Math.max(hardMinScore, config.minFaceScore);
 
     if (debugMode && rawCount > 0) {
       console.log(
