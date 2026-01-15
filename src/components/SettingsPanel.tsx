@@ -202,20 +202,20 @@ export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps
             <div className="flex items-center justify-between">
               <Label className="flex items-center gap-2">
                 <Eye className="h-4 w-4 text-primary" />
-                Sensitivity
-                <InfoTooltip text="Higher number = finds more faces but might see faces that aren't there (walls, objects). Lower = fewer mistakes but may miss small/far faces." />
+                Detection Threshold
+                <InfoTooltip text="Lower = detects more faces (including faint/small ones) but may detect walls or objects. Higher = stricter, only obvious faces." />
               </Label>
               <span className="text-sm text-primary font-bold">
-                {(1 - localSettings.detectionSensitivity).toFixed(2)}
+                {localSettings.detectionSensitivity.toFixed(2)} (lower = more faces)
               </span>
             </div>
             <Slider
               value={[localSettings.detectionSensitivity]}
               onValueChange={handleSensitivityChange}
-              min={0.2} max={0.6} step={0.05}
+              min={0.15} max={0.5} step={0.05}
             />
             <p className="text-xs text-muted-foreground">
-              🔍 Low value = strict (only obvious faces) | High value = loose (catches blurry/small faces)
+              🔍 0.15 = catches everything (blurry/small) | 0.5 = strict (clear faces only)
             </p>
           </div>
 

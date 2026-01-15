@@ -149,9 +149,19 @@ const SmartAdsSystem = () => {
     stopWebcam 
   } = useWebcam();
   
-  // ALWAYS: dual mode for video/screen, tiny-only for webcam (prevents ghost detections)
-  const forceDualModel = inputMode === 'video' || inputMode === 'screen';
-  const forceTinyOnly = inputMode === 'webcam';
+  // Determine effective model selection based on input mode AND user settings
+  const isVideoMode = inputMode === 'video' || inputMode === 'screen';
+  const isWebcamMode = inputMode === 'webcam';
+  
+  // For video: ALWAYS use dual mode (forced), user can toggle enhanced
+  // For webcam: ALWAYS use tiny only (forced) to prevent ghost detections
+  const effectiveDualModel = isVideoMode; // Forced on for video
+  const effectiveEnhanced = isVideoMode && captureSettings.enableYoloForVideo; // SSD as primary
+  
+  // Determine detector type
+  const effectiveDetector = isWebcamMode 
+    ? 'tiny' 
+    : (effectiveEnhanced ? 'ssd' : 'dual');
 
   const { 
     isModelLoaded, 
@@ -167,15 +177,15 @@ const SmartAdsSystem = () => {
     {
       sourceMode: inputMode,
       cctvMode,
-      // FORCED: dual for video/screen, tiny for webcam (no user toggle needed)
-      useDualModel: forceDualModel && !forceTinyOnly,
-      useYolo: false, // YOLO disabled for now
+      useDualModel: effectiveDualModel,
+      useYolo: false, // YOLO not implemented, using SSD as enhanced
       config: {
         debugMode,
-        // Hard floor to reduce false positives in video/CCTV
         hardMinFaceScore: captureSettings.falsePositiveMinScore,
-        // Force detector type based on input mode
-        detector: forceTinyOnly ? 'tiny' : 'dual',
+        detector: effectiveDetector,
+        // Pass detection mode for preprocessing adjustments
+        detectionMode: captureSettings.detectionMode,
+        videoQuality: captureSettings.videoQuality,
       },
     }
   );
@@ -207,10 +217,11 @@ const SmartAdsSystem = () => {
     }
   }, [adsWithCaptureWindows, addLog]);
 
-  // Handle settings change
+  // Handle settings change - log all settings for debugging
   const handleSettingsChange = useCallback((newSettings: CaptureSettings) => {
     setCaptureSettings(newSettings);
-    addLog('info', `⚙️ Settings updated: Capture ${newSettings.startPercent}% - ${newSettings.endPercent}%`);
+    addLog('info', `⚙️ Settings: Sensitivity=${newSettings.detectionSensitivity.toFixed(2)}, FPGuard=${newSettings.falsePositiveMinScore.toFixed(2)}, FemaleBoost=${newSettings.femaleBoostFactor.toFixed(2)}`);
+    addLog('info', `⚙️ Mode: ${newSettings.detectionMode}, Quality: ${newSettings.videoQuality}, Enhanced: ${newSettings.enableYoloForVideo}`);
   }, [addLog]);
 
   // Handle ads change
@@ -341,14 +352,16 @@ const SmartAdsSystem = () => {
           if (!isUserCorrected && detection.confidence >= MIN_VOTE_CONFIDENCE) {
             const voteWeight = detection.confidence * Math.min(detection.faceScore, 1);
             
-            // Apply female boost for uncertain gender classifications to counter male bias
-            const isUncertainGender = detection.confidence < 0.65;
-            const femaleBoost = isUncertainGender ? captureSettings.femaleBoostFactor : 0;
+            // Apply female boost PROPORTIONALLY based on confidence (not just uncertain)
+            // Lower confidence = more boost, higher confidence = less boost
+            // At 0.5 confidence: full boost, at 1.0 confidence: no boost
+            const confidenceScale = Math.max(0, 1 - (detection.confidence - 0.5) * 2);
+            const femaleBoost = captureSettings.femaleBoostFactor * confidenceScale;
             
             if (detection.gender === 'male') {
               newGenderVotes.male += voteWeight;
             } else {
-              // Boost female votes when uncertain
+              // Boost female votes proportionally to uncertainty
               newGenderVotes.female += voteWeight * (1 + femaleBoost);
             }
             newAgeVotes[detection.ageGroup] += voteWeight;
@@ -441,9 +454,9 @@ const SmartAdsSystem = () => {
         if (detection.confidence >= MIN_VOTE_CONFIDENCE) {
           const voteWeight = detection.confidence * Math.min(detection.faceScore, 1);
           
-          // Apply female boost for uncertain classifications
-          const isUncertainGender = detection.confidence < 0.65;
-          const femaleBoost = isUncertainGender ? captureSettings.femaleBoostFactor : 0;
+          // Apply female boost PROPORTIONALLY based on confidence
+          const confidenceScale = Math.max(0, 1 - (detection.confidence - 0.5) * 2);
+          const femaleBoost = captureSettings.femaleBoostFactor * confidenceScale;
           
           if (detection.gender === 'male') {
             initialGenderVotes.male = voteWeight;

@@ -121,7 +121,7 @@ export const useFaceDetection = (
     loadModels();
   }, []);
 
-  // Get effective config based on mode - now reactive to options
+  // Get effective config based on mode - now reactive to options and detection mode
   const getConfig = useCallback((): CCTVDetectionConfig => {
     const sourceMode = options?.sourceMode ?? 'webcam';
     const cctvMode = options?.cctvMode ?? sourceMode === 'video';
@@ -132,11 +132,66 @@ export const useFaceDetection = (
     if (options?.useDualModel && ssdLoaded) {
       detector = 'dual';
     }
+    // Allow explicit override from config
+    if (options?.config?.detector) {
+      detector = options.config.detector;
+    }
+    
+    // Apply detection mode adjustments
+    let modeAdjustments: Partial<CCTVDetectionConfig> = {};
+    const detectionMode = (options?.config as any)?.detectionMode;
+    const videoQuality = (options?.config as any)?.videoQuality;
+    
+    switch (detectionMode) {
+      case 'fast':
+        modeAdjustments = { 
+          upscale: 1.0, 
+          minConsecutiveFrames: 1,
+          minFaceSizePx: 30,
+        };
+        break;
+      case 'max':
+        modeAdjustments = { 
+          upscale: 2.5, 
+          minConsecutiveFrames: 1,
+          minFaceSizePx: 8,
+          minFaceScore: Math.max(sensitivity - 0.1, 0.08),
+        };
+        break;
+      // 'accurate' uses defaults
+    }
+    
+    // Apply video quality adjustments
+    switch (videoQuality) {
+      case 'lowQuality':
+        modeAdjustments = {
+          ...modeAdjustments,
+          upscale: Math.max(modeAdjustments.upscale ?? baseConfig.upscale, 2.0),
+          preprocessing: { gamma: 1.3, contrast: 1.4, sharpen: 0.4, denoise: true },
+        };
+        break;
+      case 'nightIR':
+        modeAdjustments = {
+          ...modeAdjustments,
+          upscale: Math.max(modeAdjustments.upscale ?? baseConfig.upscale, 2.0),
+          preprocessing: { gamma: 1.6, contrast: 1.5, sharpen: 0.5, denoise: true },
+        };
+        break;
+      case 'crowd':
+        modeAdjustments = {
+          ...modeAdjustments,
+          minFaceSizePx: 12,
+          minFaceSizePercent: 0.02,
+        };
+        break;
+      // 'hd' uses defaults
+    }
     
     return {
       ...baseConfig,
       sensitivity,
       detector,
+      ...modeAdjustments,
       ...options?.config,
     };
   }, [sensitivity, options, ssdLoaded]);
