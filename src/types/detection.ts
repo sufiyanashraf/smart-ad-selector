@@ -71,6 +71,8 @@ export interface CCTVDetectionConfig {
   hardMinFaceScore?: number;
   minFaceSizePx: number;     // 20-60
   minFaceSizePercent: number; // 0.5-5% of frame
+  /** Maximum face size as percent of frame (default 60 for close-ups) */
+  maxFaceSizePercent?: number;
   aspectRatioMin: number;    // 0.5
   aspectRatioMax: number;    // 2.0
 
@@ -104,6 +106,7 @@ export const DEFAULT_CCTV_CONFIG: CCTVDetectionConfig = {
   minFaceScore: 0.1,  // Very permissive - let more through
   minFaceSizePx: 12,  // Detect tiny faces
   minFaceSizePercent: 0.05,  // Accept very small faces (0.05% of frame)
+  maxFaceSizePercent: 60,    // Allow larger faces for close-ups
   aspectRatioMin: 0.25,  // Very wide range for angled/occluded faces
   aspectRatioMax: 4.0,
   minConsecutiveFrames: 2,  // Require 2 frames for stability (was 1)
@@ -121,6 +124,7 @@ export const DEFAULT_WEBCAM_CONFIG: CCTVDetectionConfig = {
   minFaceScore: 0.15,
   minFaceSizePx: 12,
   minFaceSizePercent: 0.1,
+  maxFaceSizePercent: 80,    // Very permissive for webcam close-ups
   aspectRatioMin: 0.25,
   aspectRatioMax: 4.0,
   minConsecutiveFrames: 2,  // Require 2 frames for stability (was 1)
