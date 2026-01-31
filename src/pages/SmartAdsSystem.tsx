@@ -92,8 +92,6 @@ const SmartAdsSystem = () => {
     adult: 0,
   });
   const [currentViewers, setCurrentViewers] = useState<DetectionResult[]>([]);
-  // Live detections = all filtered faces (instant), Stable = tracked faces meeting consecutiveHits threshold
-  const [liveDetections, setLiveDetections] = useState<DetectionResult[]>([]);
   const [testMode, setTestMode] = useState(false);
   const [manualMode, setManualMode] = useState(false);
   const [manualQueue, setManualQueue] = useState<AdMetadata[]>(() => {
@@ -271,12 +269,10 @@ const SmartAdsSystem = () => {
     return Math.sqrt(Math.pow(cx2 - cx1, 2) + Math.pow(cy2 - cy1, 2));
   }, []);
 
-  // Start detection loop - self-scheduling async loop (no interval overlap)
+  // Start detection loop - detects current viewers in frame
   const startDetectionLoop = useCallback(() => {
-    // Clear any existing loop
     if (captureIntervalRef.current) {
       window.clearInterval(captureIntervalRef.current);
-      captureIntervalRef.current = null;
     }
 
     // Clear tracking cache on new detection session
@@ -289,17 +285,12 @@ const SmartAdsSystem = () => {
       viewers: new Map(),
     };
     setShowSessionSummary(false);
-    setLiveDetections([]);
 
-    // Self-scheduling detection loop - avoids overlap issues with setInterval
-    const runDetectionLoop = async () => {
+    captureIntervalRef.current = window.setInterval(async () => {
       if (!isCapturingRef.current || !videoRef.current) return;
 
-      const loopStart = performance.now();
+      console.log('[Loop] Running detection...');
       const results = await detectFaces(videoRef.current);
-      
-      // Immediately show live detections (all filtered results from this frame)
-      setLiveDetections(results);
       
       const tracked = trackedFacesRef.current;
       const currentTime = Date.now();
@@ -309,12 +300,6 @@ const SmartAdsSystem = () => {
       if (captureSessionRef.current) {
         captureSessionRef.current.frameCount++;
       }
-      
-      // Matching thresholds - more lenient for video mode to improve tracking stability
-      const isVideoSource = inputMode === 'video' || inputMode === 'screen';
-      const matchIoUThreshold = isVideoSource ? 0.10 : 0.20;
-      const matchDistanceThreshold = isVideoSource ? 150 : 80;
-      const maxVelocity = isVideoSource ? Math.max(config.maxVelocityPx, 300) : config.maxVelocityPx;
       
       // Match new detections to tracked faces using IoU + distance
       const matchedIds = new Set<string>();
@@ -342,17 +327,12 @@ const SmartAdsSystem = () => {
           const effectiveDistance = Math.min(distance, predictedDistance);
           
           // Reject if moved too far (likely different person)
-          if (effectiveDistance > maxVelocity) continue;
+          if (effectiveDistance > config.maxVelocityPx) continue;
           
-          // Also check if boxes are similar size (same person)
-          const sizeRatio = (detection.boundingBox?.width ?? 0) / (trackedFace.boundingBox.width || 1);
-          const sizeSimilar = sizeRatio > 0.5 && sizeRatio < 2.0;
+          // Score: IoU weighted higher + inverse distance bonus
+          const score = iou * 0.6 + Math.max(0, 1 - effectiveDistance / 200) * 0.4;
           
-          // Score: IoU weighted higher + inverse distance bonus + size similarity
-          const score = iou * 0.5 + Math.max(0, 1 - effectiveDistance / 250) * 0.35 + (sizeSimilar ? 0.15 : 0);
-          
-          // More lenient matching: either good IoU OR close distance with similar size
-          if (score > bestScore && (iou > matchIoUThreshold || (effectiveDistance < matchDistanceThreshold && sizeSimilar))) {
+          if (score > bestScore && (iou > 0.2 || effectiveDistance < 80)) {
             bestScore = score;
             bestMatch = i;
           }
@@ -563,27 +543,14 @@ const SmartAdsSystem = () => {
         setDemographics(zeroDemographics);
         lastDemographicsRef.current = zeroDemographics;
       }
-      // Schedule next detection after a short delay
-      // Faster for video (better tracking), slower for webcam (less CPU)
-      const loopDuration = performance.now() - loopStart;
-      const targetDelay = isVideoSource ? 150 : 400; // ms between detections
-      const nextDelay = Math.max(50, targetDelay - loopDuration);
-      
-      if (isCapturingRef.current) {
-        captureIntervalRef.current = window.setTimeout(runDetectionLoop, nextDelay) as unknown as number;
-      }
-    };
-
-    // Start the loop
-    runDetectionLoop();
-  }, [detectFaces, addLog, videoRef, calculateIoU, calculateCenterDistance, trackingConfig, inputMode, captureSettings.femaleBoostFactor, captureSettings.minDemographicConfidence]);
+    }, 800); // Faster interval for CCTV tracking
+  }, [detectFaces, addLog, videoRef, calculateIoU, calculateCenterDistance, trackingConfig]);
 
   const stopDetectionLoop = useCallback(() => {
     if (captureIntervalRef.current) {
-      window.clearTimeout(captureIntervalRef.current);
+      window.clearInterval(captureIntervalRef.current);
       captureIntervalRef.current = null;
     }
-    setLiveDetections([]);
   }, []);
 
   // Start detection with current input source - runs continuously until manually stopped
@@ -1167,8 +1134,7 @@ const SmartAdsSystem = () => {
               hasPermission={hasPermission}
               error={webcamError}
               isCapturing={isCapturing}
-              liveDetections={liveDetections}
-              stableDetections={currentViewers}
+              detections={currentViewers}
               inputMode={inputMode}
               videoFileName={videoFileName}
               debugMode={debugMode}

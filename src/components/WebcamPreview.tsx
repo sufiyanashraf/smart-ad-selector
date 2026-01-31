@@ -17,11 +17,6 @@ interface WebcamPreviewProps {
   hasPermission: boolean | null;
   error: string | null;
   isCapturing: boolean;
-  /** Live detections = all filtered faces from current frame (instant display) */
-  liveDetections?: DetectionResult[];
-  /** Stable detections = tracked faces meeting consecutiveHits threshold (for demographics) */
-  stableDetections?: DetectionResult[];
-  /** @deprecated Use liveDetections and stableDetections instead */
   detections?: DetectionResult[];
   inputMode?: InputSourceMode;
   videoFileName?: string | null;
@@ -43,9 +38,7 @@ export const WebcamPreview = ({
   hasPermission,
   error,
   isCapturing,
-  liveDetections = [],
-  stableDetections = [],
-  detections: legacyDetections = [], // Fallback for backward compatibility
+  detections = [],
   inputMode = 'webcam',
   videoFileName,
   debugMode = false,
@@ -54,11 +47,6 @@ export const WebcamPreview = ({
   labelingMode = false,
   onLabelDetection,
 }: WebcamPreviewProps) => {
-  // Use liveDetections if provided, otherwise fall back to legacy detections
-  const displayDetections = liveDetections.length > 0 ? liveDetections : legacyDetections;
-  // Stable IDs for thicker border rendering
-  const stableIds = new Set(stableDetections.map(d => d.trackingId));
-  
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [zoomMode, setZoomMode] = useState<'none' | 'auto' | 'manual'>('none');
   const [manualZoom, setManualZoom] = useState(1);
@@ -72,9 +60,9 @@ export const WebcamPreview = ({
   // Track saved faces for visual feedback
   const [recentlySaved, setRecentlySaved] = useState<Set<string>>(new Set());
 
-  // Calculate zoom transform to focus on detected faces - use displayDetections
+  // Calculate zoom transform to focus on detected faces
   const zoomTransform = useMemo(() => {
-    if (zoomMode === 'none' || displayDetections.length === 0) {
+    if (zoomMode === 'none' || detections.length === 0) {
       return { transform: 'none', origin: 'center center' };
     }
 
@@ -86,7 +74,7 @@ export const WebcamPreview = ({
 
     // Find bounding box that encompasses all faces
     let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0;
-    displayDetections.forEach(d => {
+    detections.forEach(d => {
       if (d.boundingBox) {
         minX = Math.min(minX, d.boundingBox.x);
         minY = Math.min(minY, d.boundingBox.y);
@@ -118,7 +106,7 @@ export const WebcamPreview = ({
       transform: `scale(${zoom})`,
       origin: `${centerX}% ${centerY}%`
     };
-  }, [displayDetections, zoomMode, manualZoom, videoRef]);
+  }, [detections, zoomMode, manualZoom, videoRef]);
 
   const getSourceIcon = () => {
     if (!isActive) return <CameraOff className="h-4 w-4 text-muted-foreground" />;
@@ -205,7 +193,7 @@ export const WebcamPreview = ({
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    if (!isActive || displayDetections.length === 0) return;
+    if (!isActive || detections.length === 0) return;
 
     // Get scale factors
     const videoWidth = video.videoWidth || 640;
@@ -214,13 +202,11 @@ export const WebcamPreview = ({
     const scaleY = rect.height / videoHeight;
 
     // Draw bounding boxes for each detection
-    displayDetections.forEach((detection, idx) => {
+    detections.forEach((detection, idx) => {
       if (!detection.boundingBox) return;
 
       const faceId = detection.trackingId || `face_${idx}`;
-      const isStable = stableIds.has(faceId);
       const isLabeledInSession = labeledFacesInSession.has(faceId);
-
       const justSaved = recentlySaved.has(faceId);
 
       const { x, y, width, height } = detection.boundingBox;
@@ -272,17 +258,10 @@ export const WebcamPreview = ({
             : getHslA('--success', 0.2, 'hsl(142 71% 45% / 0.2)');
       }
 
-      // Draw bounding box - thicker for stable faces
+      // Draw bounding box
       ctx.strokeStyle = boxColor;
-      ctx.lineWidth = justSaved ? 4 : isStable ? 3 : 1.5;
+      ctx.lineWidth = justSaved ? 3 : 2;
       ctx.strokeRect(scaledX, scaledY, scaledWidth, scaledHeight);
-      
-      // Draw dashed border for unstable (live-only) faces
-      if (!isStable && !justSaved) {
-        ctx.setLineDash([4, 4]);
-        ctx.strokeRect(scaledX, scaledY, scaledWidth, scaledHeight);
-        ctx.setLineDash([]);
-      }
 
       // Draw semi-transparent fill
       ctx.fillStyle = bgColor;
@@ -303,23 +282,18 @@ export const WebcamPreview = ({
       ctx.textBaseline = 'middle';
       ctx.fillText(label, scaledX + 5, scaledY - labelHeight / 2);
 
-      // Draw status indicator for labeled faces or stable status
+      // Draw status indicator for labeled faces
       if (justSaved) {
         ctx.fillStyle = 'hsl(142 71% 45%)';
         ctx.font = 'bold 14px sans-serif';
         ctx.fillText('✓ SAVED', scaledX + 5, scaledY + scaledHeight + 15);
-      } else if (!isStable) {
-        // Show "tracking..." for unstable faces
-        ctx.fillStyle = 'hsl(40 90% 50%)';
-        ctx.font = '10px sans-serif';
-        ctx.fillText('tracking...', scaledX + 5, scaledY + scaledHeight + 12);
       } else if (isLabeledInSession && labelingMode) {
         ctx.fillStyle = 'hsl(220 90% 60%)';
         ctx.font = '10px sans-serif';
         ctx.fillText('labeled', scaledX + 5, scaledY + scaledHeight + 12);
       }
     });
-  }, [displayDetections, stableIds, isActive, videoRef, labelingMode, recentlySaved]);
+  }, [detections, isActive, videoRef, labelingMode, recentlySaved]);
 
   return (
     <div className="glass-card p-4 space-y-3">
@@ -327,12 +301,9 @@ export const WebcamPreview = ({
         <h3 className="font-display font-semibold text-sm flex items-center gap-2">
           {getSourceIcon()}
           {getSourceLabel()}
-          {displayDetections.length > 0 && (
+          {detections.length > 0 && (
             <span className="ml-2 px-2 py-0.5 bg-primary/20 text-primary text-xs rounded-full">
-              {displayDetections.length} face{displayDetections.length !== 1 ? 's' : ''}
-              {stableDetections.length > 0 && stableDetections.length !== displayDetections.length && (
-                <span className="ml-1 text-muted-foreground">({stableDetections.length} stable)</span>
-              )}
+              {detections.length} face{detections.length !== 1 ? 's' : ''}
             </span>
           )}
           {labelingMode && (
@@ -425,7 +396,7 @@ export const WebcamPreview = ({
       </div>
 
       {/* Labeling Forms - positioned OUTSIDE the camera container to avoid clipping */}
-      {labelingMode && isActive && videoRef.current && displayDetections.map((detection, idx) => {
+      {labelingMode && isActive && videoRef.current && detections.map((detection, idx) => {
         if (!detection.boundingBox) return null;
         
         const video = videoRef.current!;
@@ -552,35 +523,6 @@ export const WebcamPreview = ({
       })}
 
       <div className="relative aspect-video rounded-lg overflow-hidden bg-muted">
-        {/* Always-visible detection stats badge */}
-        {isActive && isCapturing && (
-          <div className="absolute top-2 left-2 z-30 flex gap-1.5 flex-wrap">
-            <div className="px-2 py-0.5 rounded bg-background/80 backdrop-blur-sm text-[10px] font-mono border border-border/50">
-              <span className="text-muted-foreground">raw:</span>
-              <span className="ml-1 text-foreground">{debugInfo?.rawDetections ?? 0}</span>
-            </div>
-            <div className="px-2 py-0.5 rounded bg-background/80 backdrop-blur-sm text-[10px] font-mono border border-border/50">
-              <span className="text-muted-foreground">live:</span>
-              <span className={cn("ml-1", displayDetections.length > 0 ? "text-primary" : "text-muted-foreground")}>
-                {displayDetections.length}
-              </span>
-            </div>
-            <div className="px-2 py-0.5 rounded bg-background/80 backdrop-blur-sm text-[10px] font-mono border border-border/50">
-              <span className="text-muted-foreground">stable:</span>
-              <span className={cn("ml-1", stableDetections.length > 0 ? "text-green-500" : "text-muted-foreground")}>
-                {stableDetections.length}
-              </span>
-            </div>
-            {debugInfo && (
-              <div className="px-2 py-0.5 rounded bg-background/80 backdrop-blur-sm text-[10px] font-mono border border-border/50">
-                <span className="text-muted-foreground">{debugInfo.detectorUsed}</span>
-                <span className="ml-1 text-muted-foreground">|</span>
-                <span className="ml-1 text-foreground">{debugInfo.latencyMs?.toFixed(0)}ms</span>
-              </div>
-            )}
-          </div>
-        )}
-        
         {/* Debug Overlay */}
         <DebugOverlay 
           debug={debugInfo} 
@@ -613,7 +555,7 @@ export const WebcamPreview = ({
           />
           
           {/* Label buttons on faces - inside container */}
-          {labelingMode && isActive && displayDetections.map((detection, idx) => {
+          {labelingMode && isActive && detections.map((detection, idx) => {
             if (!detection.boundingBox || !videoRef.current) return null;
             
             const video = videoRef.current;
@@ -721,8 +663,8 @@ export const WebcamPreview = ({
       <p className="text-xs text-muted-foreground text-center">
         {labelingMode 
           ? 'Click "Label This Face" to add ground truth data for evaluation'
-          : isActive && displayDetections.length > 0 
-            ? `Detecting ${displayDetections.length} person(s) with bounding boxes${stableDetections.length > 0 ? ` (${stableDetections.length} stable)` : ''}`
+          : isActive && detections.length > 0 
+            ? `Detecting ${detections.length} person(s) with bounding boxes`
             : inputMode === 'webcam' 
               ? 'Use dropdown to select webcam, video file, or screen capture'
               : `${inputMode === 'video' ? 'Video file' : 'Screen capture'} mode - select source from dropdown`

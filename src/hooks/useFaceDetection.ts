@@ -400,10 +400,9 @@ export const useFaceDetection = (
           return false;
         }
         
-        // Reject overly large detections (walls/sky) - max 60% of frame (increased for close-ups)
-        const maxFacePercent = config.maxFaceSizePercent ?? 60;
-        if (facePercent > maxFacePercent) {
-          if (debugMode) console.log(`[Filter] ❌ Too large: ${facePercent.toFixed(2)}% > ${maxFacePercent}% (likely wall/background)`);
+        // Reject overly large detections (walls/sky) - max 35% of frame
+        if (facePercent > 35) {
+          if (debugMode) console.log(`[Filter] ❌ Too large: ${facePercent.toFixed(2)}% > 35% (likely wall/background)`);
           return false;
         }
         
