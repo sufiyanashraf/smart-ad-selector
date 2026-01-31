@@ -1746,9 +1746,6 @@ smart-ads-system/
 │   ├── main.tsx                   # Application entry
 │   └── vite-env.d.ts              # Vite type declarations
 │
-├── .lovable/
-│   └── plan.md                    # Development plan
-│
 ├── components.json                # shadcn/ui configuration
 ├── eslint.config.js               # ESLint configuration
 ├── index.html                     # HTML template
