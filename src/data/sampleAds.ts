@@ -9,10 +9,10 @@ export const sampleAds: AdMetadata[] = [
     title: 'TechPro Gadgets',
     gender: 'male',
     ageGroup: 'young',
-    duration: 15, // ForBiggerBlazes is ~15s
-    captureStart: 9,
-    captureEnd: 14,
-    videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+    duration: 30,
+    captureStart: 18,
+    captureEnd: 28,
+    videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
   },
   {
     id: 'ad-002',
@@ -20,10 +20,10 @@ export const sampleAds: AdMetadata[] = [
     title: 'Elegance Fashion',
     gender: 'female',
     ageGroup: 'adult',
-    duration: 15, // ForBiggerEscapes is ~15s
+    duration: 15,
     captureStart: 9,
     captureEnd: 14,
-    videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+    videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
   },
   {
     id: 'ad-003',
@@ -31,10 +31,10 @@ export const sampleAds: AdMetadata[] = [
     title: 'PowerBoost Energy',
     gender: 'male',
     ageGroup: 'young',
-    duration: 60, // ForBiggerFun is ~60s
+    duration: 60,
     captureStart: 36,
     captureEnd: 56,
-    videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',
+    videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',
   },
   {
     id: 'ad-004',
@@ -42,10 +42,10 @@ export const sampleAds: AdMetadata[] = [
     title: 'GlowUp Skincare',
     gender: 'female',
     ageGroup: 'young',
-    duration: 15, // ForBiggerJoyrides is ~15s
+    duration: 15,
     captureStart: 9,
     captureEnd: 14,
-    videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
+    videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
   },
   {
     id: 'ad-005',
@@ -53,10 +53,10 @@ export const sampleAds: AdMetadata[] = [
     title: 'WealthGuard Insurance',
     gender: 'all',
     ageGroup: 'adult',
-    duration: 53, // ForBiggerMeltdowns is ~53s
+    duration: 53,
     captureStart: 32,
     captureEnd: 49,
-    videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4',
+    videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4',
   },
   {
     id: 'ad-006',
@@ -64,10 +64,10 @@ export const sampleAds: AdMetadata[] = [
     title: 'NexGen Gaming',
     gender: 'all',
     ageGroup: 'young',
-    duration: 60, // Using shorter clip, not full Big Buck Bunny
+    duration: 60,
     captureStart: 36,
     captureEnd: 56,
-    videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+    videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
   },
 ];
 
