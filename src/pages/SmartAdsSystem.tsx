@@ -877,15 +877,70 @@ const SmartAdsSystem = () => {
     }
   }, [currentTime, currentAd, isPlaying, manualMode, startWebcam, stopWebcam, startDetectionLoop, stopDetectionLoop, addLog, reorderQueue, captureSettings.autoPauseEnabled]);
 
+  // ─── Auto-pause presence checking ──────────────────────────
+  const stopPresenceChecks = useCallback(() => {
+    if (presenceCheckIntervalRef.current) {
+      window.clearInterval(presenceCheckIntervalRef.current);
+      presenceCheckIntervalRef.current = null;
+    }
+    if (presenceCountdownRef.current) {
+      window.clearInterval(presenceCountdownRef.current);
+      presenceCountdownRef.current = null;
+    }
+    setNextCheckIn(null);
+  }, []);
+
+  const startPresenceChecks = useCallback(() => {
+    stopPresenceChecks();
+    const baseInterval = captureSettings.presenceCheckInterval;
+    // Add jitter: +/- 5 seconds
+    const jitter = Math.floor(Math.random() * 10) - 5;
+    const interval = Math.max(10, baseInterval + jitter) * 1000;
+
+    let countdown = Math.round(interval / 1000);
+    setNextCheckIn(countdown);
+
+    presenceCountdownRef.current = window.setInterval(() => {
+      countdown--;
+      setNextCheckIn(Math.max(0, countdown));
+    }, 1000);
+
+    presenceCheckIntervalRef.current = window.setInterval(async () => {
+      addLog('info', '👀 Presence check: scanning for audience...');
+      
+      // Try to start webcam for a single check
+      const started = await startWebcam();
+      if (started && videoRef.current) {
+        const results = await detectFaces(videoRef.current);
+        stopWebcam();
+
+        if (results.length > 0) {
+          addLog('info', `✅ Audience detected (${results.length} faces) — resuming ads`);
+          setIsAutoPaused(false);
+          setIsPlaying(true);
+          stopPresenceChecks();
+        } else {
+          addLog('info', '❌ No audience — staying paused');
+          // Reset countdown
+          countdown = Math.round(interval / 1000);
+          setNextCheckIn(countdown);
+        }
+      } else {
+        addLog('info', '⚠️ Could not activate camera for presence check');
+      }
+    }, interval);
+  }, [captureSettings.presenceCheckInterval, startWebcam, stopWebcam, detectFaces, videoRef, addLog, stopPresenceChecks]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       stopDetectionLoop();
+      stopPresenceChecks();
       if (testModeTimeoutRef.current) {
         window.clearTimeout(testModeTimeoutRef.current);
       }
     };
-  }, [stopDetectionLoop]);
+  }, [stopDetectionLoop, stopPresenceChecks]);
 
   const handleTimeUpdate = useCallback((time: number) => {
     setCurrentTime(time);
