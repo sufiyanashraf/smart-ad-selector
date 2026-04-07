@@ -77,30 +77,36 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
     const reasons: string[] = [];
     const { dominantGender, dominantAge } = getDominantAudience(demographics);
 
-    const genderMatches = ad.gender === dominantGender || ad.gender === 'all';
-    const ageMatches = ad.ageGroup === dominantAge || ad.ageGroup === 'all';
-
-    if (ad.gender === dominantGender && ad.ageGroup === dominantAge) {
-      score += 10;
-      reasons.push(`★ Perfect match: ${dominantGender} + ${dominantAge}`);
-    } else if (genderMatches && ageMatches) {
-      score += 5;
-      reasons.push('✓ Matches both criteria');
-    } else if (ad.gender === dominantGender) {
-      score += 3;
-      reasons.push(`✓ Matches ${dominantGender}`);
-    } else if (ad.ageGroup === dominantAge) {
-      score += 3;
-      reasons.push(`✓ Matches ${dominantAge}`);
-    } else {
-      score -= 5;
-      reasons.push('✗ No match');
+    // Strict gender filter: wrong gender = excluded
+    if (ad.gender !== dominantGender && ad.gender !== 'all') {
+      return { ad, score: -100, reasons: ['✗ Gender mismatch — excluded'] };
     }
 
-    // Small penalty for recently played (but don't exclude them)
+    // Gender match bonus
+    if (ad.gender === dominantGender) {
+      score += 5;
+      reasons.push(`✓ Gender: ${dominantGender}`);
+    } else {
+      score += 2;
+      reasons.push('✓ Gender: all');
+    }
+
+    // Age match scoring
+    if (ad.ageGroup === dominantAge) {
+      score += 5;
+      reasons.push(`✓ Age: ${dominantAge}`);
+    } else if (ad.ageGroup === 'all') {
+      score += 2;
+      reasons.push('✓ Age: all');
+    } else {
+      score += 0;
+      reasons.push(`~ Age mismatch (${ad.ageGroup})`);
+    }
+
+    // Small penalty for recently played
     if (recentlyPlayedRef.current.includes(ad.id)) {
       const recencyIndex = recentlyPlayedRef.current.indexOf(ad.id);
-      const penalty = 2 - recencyIndex; // most recent = -2, second = -1, third = 0
+      const penalty = 2 - recencyIndex;
       if (penalty > 0) {
         score -= penalty;
         reasons.push(`Recently played (-${penalty})`);
@@ -112,28 +118,29 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
 
   const reorderQueue = useCallback((demographics: DemographicCounts) => {
     console.log('[Queue] Reordering based on demographics:', demographics);
+    const { dominantGender, dominantAge } = getDominantAudience(demographics);
 
     const allAds = customAds && customAds.length > 0 ? customAds : sampleAds;
     const adsWithCapture = applyCapture(allAds, captureStartPercent, captureEndPercent);
-    const scoredAds = adsWithCapture.map(ad => scoreAd(ad, demographics));
 
-    // Sort by score descending
-    scoredAds.sort((a, b) => b.score - a.score);
+    // Step 1: Hard filter by gender
+    let filtered = adsWithCapture.filter(ad => ad.gender === dominantGender || ad.gender === 'all');
 
-    // Keep ALL ads with score > 0 (relevant to the audience)
-    const relevantAds = scoredAds.filter(s => s.score > 0);
-    // If nothing scored positive, keep at least the top 2
-    const finalAds = relevantAds.length > 0
-      ? relevantAds.map(s => s.ad)
-      : scoredAds.slice(0, 2).map(s => s.ad);
-
-    const { dominantGender, dominantAge } = getDominantAudience(demographics);
-
-    console.log('[Queue] New queue:', scoredAds.map(s => `${s.ad.title}(${s.score})`).join(' > '));
-    addLog('queue', `🔄 Queue updated for ${dominantGender} ${dominantAge} — ${finalAds.length} matching ads`);
-    if (scoredAds[0]) {
-      addLog('queue', `Next: "${scoredAds[0].ad.title}" (score: ${scoredAds[0].score})`);
+    // Step 2: Fallback if nothing matched
+    if (filtered.length === 0) {
+      filtered = adsWithCapture.filter(ad => ad.gender === dominantGender);
     }
+    if (filtered.length === 0) {
+      filtered = adsWithCapture; // last resort
+    }
+
+    // Step 3: Score within the filtered set (by age relevance)
+    const scored = filtered.map(ad => scoreAd(ad, demographics));
+    scored.sort((a, b) => b.score - a.score);
+    const finalAds = scored.map(s => s.ad);
+
+    console.log('[Queue] Strict filter for', dominantGender, dominantAge, '→', finalAds.map(a => a.title).join(', '));
+    addLog('queue', `🔄 Queue: ${dominantGender} ${dominantAge} → ${finalAds.length} ads (${finalAds.map(a => a.title).join(', ')})`);
 
     selectionRef.current.latestQueue = finalAds;
     setQueue(finalAds);
