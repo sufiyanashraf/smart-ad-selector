@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { AdMetadata } from '@/types/ad';
-import { Play, Pause, SkipForward, Volume2, VolumeX, Camera, CameraOff, Maximize, Minimize } from 'lucide-react';
+import { Play, Pause, SkipForward, Volume2, VolumeX, Camera, CameraOff, Maximize, Minimize, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
