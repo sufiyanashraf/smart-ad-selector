@@ -40,9 +40,11 @@ const SmartAdsSystem = () => {
     minDemographicConfidence: 0.75,
     femaleBoostFactor: 0.15,
     enableHairHeuristics: true,
-    requireFaceTexture: false, // Disabled by default - can cause real face rejection
+    requireFaceTexture: false,
     useDualModelForVideo: true,
     enableYoloForVideo: false,
+    autoPauseEnabled: false,
+    presenceCheckInterval: 30,
   });
 
   // Labeling mode for evaluation
