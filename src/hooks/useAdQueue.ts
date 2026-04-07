@@ -40,6 +40,7 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
   } = props || {};
 
   const manualQueueIndexRef = useRef(0);
+  const recentlyPlayedRef = useRef<string[]>([]);
   const [queue, setQueue] = useState<AdMetadata[]>(() =>
     applyCapture(customAds && customAds.length > 0 ? customAds : sampleAds, captureStartPercent, captureEndPercent)
   );
@@ -96,9 +97,14 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
       reasons.push('✗ No match');
     }
 
-    if (ad.id === selectionRef.current.lastPlayedId) {
-      score -= 3;
-      reasons.push('Just played (-3)');
+    // Small penalty for recently played (but don't exclude them)
+    if (recentlyPlayedRef.current.includes(ad.id)) {
+      const recencyIndex = recentlyPlayedRef.current.indexOf(ad.id);
+      const penalty = 2 - recencyIndex; // most recent = -2, second = -1, third = 0
+      if (penalty > 0) {
+        score -= penalty;
+        reasons.push(`Recently played (-${penalty})`);
+      }
     }
 
     return { ad, score, reasons };
@@ -111,20 +117,26 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
     const adsWithCapture = applyCapture(allAds, captureStartPercent, captureEndPercent);
     const scoredAds = adsWithCapture.map(ad => scoreAd(ad, demographics));
 
+    // Sort by score descending
     scoredAds.sort((a, b) => b.score - a.score);
 
-    const top2 = scoredAds.slice(0, 2).map(s => s.ad);
-    const { dominantGender, dominantAge } = getDominantAudience(demographics);
-    const topAd = scoredAds[0];
+    // Keep ALL ads with score > 0 (relevant to the audience)
+    const relevantAds = scoredAds.filter(s => s.score > 0);
+    // If nothing scored positive, keep at least the top 2
+    const finalAds = relevantAds.length > 0
+      ? relevantAds.map(s => s.ad)
+      : scoredAds.slice(0, 2).map(s => s.ad);
 
-    if (topAd) {
-      console.log('[Queue] New queue (max 2):', scoredAds.slice(0, 2).map(s => `${s.ad.title}(${s.score})`).join(' > '));
-      addLog('queue', `🔄 Queue updated for ${dominantGender} ${dominantAge}`);
-      addLog('queue', `Next: "${topAd.ad.title}" (score: ${topAd.score})`);
+    const { dominantGender, dominantAge } = getDominantAudience(demographics);
+
+    console.log('[Queue] New queue:', scoredAds.map(s => `${s.ad.title}(${s.score})`).join(' > '));
+    addLog('queue', `🔄 Queue updated for ${dominantGender} ${dominantAge} — ${finalAds.length} matching ads`);
+    if (scoredAds[0]) {
+      addLog('queue', `Next: "${scoredAds[0].ad.title}" (score: ${scoredAds[0].score})`);
     }
 
-    selectionRef.current.latestQueue = top2;
-    setQueue(top2);
+    selectionRef.current.latestQueue = finalAds;
+    setQueue(finalAds);
   }, [scoreAd, addLog, customAds, captureStartPercent, captureEndPercent]);
 
   const getNextAd = useCallback((): AdMetadata | null => {
@@ -150,16 +162,31 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
       selectionRef.current.latestQueue = resetAds;
       setQueue(resetAds);
       setPlayedAds([]);
+      recentlyPlayedRef.current = [];
       selectionRef.current.lastPlayedId = null;
       return resetAds[0] || null;
     }
 
-    let nextAd = activeQueue[0];
-    if (nextAd.id === selectionRef.current.lastPlayedId && activeQueue.length > 1) {
-      nextAd = activeQueue[1];
+    // Pick the first ad in the sorted queue that hasn't been recently played
+    const recent = recentlyPlayedRef.current;
+    let nextAd: AdMetadata | null = null;
+
+    for (const ad of activeQueue) {
+      if (!recent.includes(ad.id)) {
+        nextAd = ad;
+        break;
+      }
     }
 
-    setPlayedAds(prev => [nextAd.id, ...prev].slice(0, 5));
+    // If all have been recently played, pick the top-scored one (first in queue)
+    if (!nextAd) {
+      nextAd = activeQueue[0];
+    }
+
+    // Track in recently played (keep last 3)
+    recentlyPlayedRef.current = [nextAd.id, ...recent.filter(id => id !== nextAd!.id)].slice(0, 3);
+
+    setPlayedAds(prev => [nextAd!.id, ...prev].slice(0, 5));
     selectionRef.current.lastPlayedId = nextAd.id;
 
     addLog('ad', `▶️ Playing: "${nextAd.title}"`);

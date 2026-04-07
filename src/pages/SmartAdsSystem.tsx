@@ -973,6 +973,9 @@ const SmartAdsSystem = () => {
   // ─── Periodic analytics recording in test mode ────────────
   const analyticsIntervalRef = useRef<number | null>(null);
   const lastAnalyticsRecordRef = useRef<number>(0);
+  const currentAdRef = useRef(currentAd);
+  currentAdRef.current = currentAd;
+
   useEffect(() => {
     if (!testMode || manualMode) {
       if (analyticsIntervalRef.current) {
@@ -983,11 +986,14 @@ const SmartAdsSystem = () => {
     }
 
     // Record analytics every 30 seconds during test mode
+    // Read from refs to avoid resetting the interval on every demographics update
     analyticsIntervalRef.current = window.setInterval(() => {
       const now = Date.now();
-      const total = demographics.male + demographics.female;
+      const demo = lastDemographicsRef.current;
+      const ad = currentAdRef.current;
+      const total = demo.male + demo.female;
       if (total === 0) return;
-      if (now - lastAnalyticsRecordRef.current < 25000) return; // Avoid double-recording
+      if (now - lastAnalyticsRecordRef.current < 25000) return;
 
       lastAnalyticsRecordRef.current = now;
       recordAnalyticsSession({
@@ -995,13 +1001,13 @@ const SmartAdsSystem = () => {
         endedAt: now,
         peakViewers: total,
         totalViewers: total,
-        maleCount: demographics.male,
-        femaleCount: demographics.female,
-        kidCount: demographics.kid,
-        youngCount: demographics.young,
-        adultCount: demographics.adult,
-        adId: currentAd?.id || '',
-        adTitle: currentAd?.title || '',
+        maleCount: demo.male,
+        femaleCount: demo.female,
+        kidCount: demo.kid,
+        youngCount: demo.young,
+        adultCount: demo.adult,
+        adId: ad?.id || '',
+        adTitle: ad?.title || '',
       });
       addLog('info', '📊 Analytics recorded (test mode snapshot)');
     }, 30000);
@@ -1012,7 +1018,7 @@ const SmartAdsSystem = () => {
         analyticsIntervalRef.current = null;
       }
     };
-  }, [testMode, manualMode, demographics, currentAd, addLog]);
+  }, [testMode, manualMode, addLog]);
 
   // Cleanup on unmount
   useEffect(() => {
