@@ -17,6 +17,8 @@ interface VideoPlayerProps {
   onDurationDetected?: (durationSeconds: number) => void;
   isFullscreen?: boolean;
   onFullscreenToggle?: () => void;
+  isAutoPaused?: boolean;
+  nextCheckIn?: number | null;
 }
 
 export const VideoPlayer = ({
@@ -32,6 +34,8 @@ export const VideoPlayer = ({
   onDurationDetected,
   isFullscreen = false,
   onFullscreenToggle,
+  isAutoPaused = false,
+  nextCheckIn = null,
 }: VideoPlayerProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
@@ -228,6 +232,21 @@ export const VideoPlayer = ({
           </div>
         </div>
       </div>
+
+      {/* Auto-pause overlay */}
+      {isAutoPaused && (
+        <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex flex-col items-center justify-center z-10">
+          <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+            <Users className="h-8 w-8 text-muted-foreground animate-pulse" />
+          </div>
+          <p className="text-lg font-display font-semibold text-foreground">Waiting for audience...</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            {nextCheckIn !== null
+              ? `Checking again in ${nextCheckIn}s`
+              : 'Scanning periodically for viewers'}
+          </p>
+        </div>
+      )}
 
       {/* Ad info overlay - hidden in fullscreen */}
       {!isFullscreen && (

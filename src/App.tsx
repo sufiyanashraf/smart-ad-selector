@@ -9,6 +9,7 @@ import LandingPage from "./pages/LandingPage";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import ModelEvaluation from "./pages/ModelEvaluation";
+import ManagerAnalytics from "./pages/ManagerAnalytics";
 
 const queryClient = new QueryClient();
 
@@ -24,6 +25,7 @@ const App = () => (
               <Route path="/" element={<LandingPage />} />
               <Route path="/dashboard" element={<Index />} />
               <Route path="/admin/evaluation" element={<ModelEvaluation />} />
+              <Route path="/manager/analytics" element={<ManagerAnalytics />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
