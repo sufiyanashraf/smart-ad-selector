@@ -1,109 +1,40 @@
 
 
-# Plan: Analytics Dashboard + Auto-Pause Ads
+# Plan: Fix Ad Queue Rotation and Analytics Recording
 
-## Overview
-Two major features: (1) a manager-only Analytics page that stores and displays all-time audience statistics with timeline, PDF export, and professional dashboards; (2) an auto-pause system that stops ads when no audience is detected and periodically checks for new arrivals.
+## Issue 1: Queue Plays Only 2 Ads in a Loop
 
-## Part 1: Analytics Storage and Data Model
+**Root Cause**: `reorderQueue` in `useAdQueue.ts` takes only the top 2 ads (`scoredAds.slice(0, 2)`) and `getNextAd` alternates between `queue[0]` and `queue[1]`. This creates a fixed 2-ad loop regardless of audience.
 
-**New file: `src/types/analytics.ts`**
-- `AnalyticsEvent` — each detection snapshot: `{ timestamp, maleCount, femaleCount, kidCount, youngCount, adultCount, totalViewers, adId, adTitle, sessionId }`
-- `AnalyticsSession` — a continuous viewing period: `{ id, startedAt, endedAt, peakViewers, events[] }`
-- `DailyAnalyticsSummary` — pre-aggregated daily totals
-- `HourlyBucket` — for timeline: `{ hour, avgViewers, maleCount, femaleCount, ... }`
+**Fix**:
+- Change `reorderQueue` to keep ALL ads sorted by relevance score (not just top 2), filtering out only negative-score ads
+- Update `getNextAd` to rotate through matching ads: pick the highest-scored ad that was NOT recently played (track last 3-4 played IDs instead of just 1)
+- When audience changes, re-score and re-sort, but maintain rotation position among the new top matches
+- Update the AdQueue component footer text from "Top 2 ads" to reflect the new behavior
 
-**Storage: `src/utils/analyticsStorage.ts`**
-- Write to `localStorage` key `smartads-analytics-events` and `smartads-analytics-sessions`
-- Helper functions: `recordAnalyticsEvent()`, `getEventsInRange(start, end)`, `getDailySummary(date)`, `getHourlyTimeline(date)`, `getAllTimeTotals()`, `exportToJSON()`
-- Data capped at ~10,000 events (rolling window) to avoid localStorage limits
-- Structured so migrating to cloud later means swapping this one file
+**File**: `src/hooks/useAdQueue.ts`
+- `reorderQueue`: keep all positively-scored ads (score > 0), sorted descending
+- `getNextAd`: iterate through the sorted queue, skip any ad in the `recentlyPlayed` list (last 3 IDs), pick the first available. If all have been played recently, pick the top-scored one
+- Track `recentlyPlayed` as a ref array of last 3 ad IDs
 
-**Integration in `SmartAdsSystem.tsx`**
-- After each capture session summary is built (line ~816), call `recordAnalyticsEvent()` to persist the demographics snapshot with timestamp and current ad info
-- Also record when audience count drops to 0 (session end)
+**File**: `src/components/AdQueue.tsx`
+- Update footer text
 
-## Part 2: Manager Analytics Page
+## Issue 2: Analytics Not Recording on Cloned Project
 
-**New route: `/manager/analytics`** (added to `App.tsx`)
+**Root Cause**: The periodic analytics recording in test mode (every 30s interval in `useEffect`) has `demographics` in its dependency array. Since `demographics` state updates every ~800ms from the detection loop, the `useEffect` re-runs constantly, destroying and recreating the 30-second `setInterval` before it ever fires. The timer never reaches 30 seconds.
 
-**New page: `src/pages/ManagerAnalytics.tsx`**
-- Password-protected login (password: `smartads1234`, same as evaluation)
-- Professional enterprise-style dashboard with these sections:
+**Fix in `src/pages/SmartAdsSystem.tsx`**:
+- Remove `demographics` and `currentAd` from the useEffect dependency array for the analytics interval
+- Instead, read demographics from `lastDemographicsRef.current` inside the interval callback (the ref is already kept in sync)
+- Read currentAd from a new ref (`currentAdRef`) to avoid stale closures
+- This way the 30s interval is created once when test mode starts and destroyed when it stops, and each tick reads the latest values from refs
 
-### 2a. Overview Cards (top row)
-- Total visitors (all time)
-- Male / Female ratio (with percentage bar)
-- Kid / Young / Adult breakdown
-- Average visitors per day
-- Peak hour (busiest time)
-- Total sessions recorded
+## Summary of Changes
 
-### 2b. Timeline View
-- Date picker to select a day
-- Hourly bar chart showing audience count per hour (e.g., "4:00 PM - 5:00 PM: 12 viewers")
-- Each bar segmented by gender (blue/pink) or age group
-- Shows when audience arrived and left (session start/end markers)
-- Built with Recharts (already available via shadcn charts)
-
-### 2c. Demographic Breakdown
-- Pie charts: Gender split, Age group split
-- Trend line: daily visitor count over last 30 days
-- Table: top hours by traffic
-
-### 2d. Session History
-- Scrollable table of all recorded sessions
-- Columns: Date/Time, Duration, Viewers, Male, Female, Kid, Young, Adult, Ad Playing
-- Sortable and filterable by date range
-
-### 2e. PDF Export
-- Button to export current view as PDF
-- Uses browser `window.print()` with a print-optimized CSS layout
-- Includes: date range, all summary stats, timeline chart (as rendered), demographic tables
-- Alternative: generate PDF via a canvas-to-image approach for charts
-
-## Part 3: Auto-Pause Ads When No Audience
-
-**Changes in `SmartAdsSystem.tsx`**
-
-- New state: `autoPauseEnabled` (toggle in settings), `isAutoPaused` (current pause state)
-- New ref: `presenceCheckIntervalRef` for periodic CCTV polling
-
-**Logic:**
-1. When capture session ends with 0 viewers detected → pause ad playback, set `isAutoPaused = true`
-2. Start a periodic check interval (configurable: 15-60 seconds, default 30)
-3. Each check: briefly activate camera/CCTV, run one detection pass
-4. If faces detected → resume ad playback, `isAutoPaused = false`, start normal capture flow
-5. If no faces → keep paused, show "Waiting for audience..." overlay on video player
-6. Random jitter on check interval (e.g., 25-35 seconds) to appear more natural
-
-**UI additions:**
-- "Waiting for audience..." overlay on VideoPlayer when auto-paused
-- Pulsing indicator showing next check countdown
-- Settings toggle: "Auto-pause when no audience" + interval slider
-- Add `autoPauseEnabled`, `presenceCheckInterval` to `CaptureSettings`
-
-## Part 4: Settings Panel Updates
-
-Add to `SettingsPanel.tsx`:
-- "Auto-Pause" section with toggle and interval slider (15-60s)
-- These settings persist with the rest of `CaptureSettings`
-
-## Part 5: Navigation Updates
-
-- Add "Analytics" link in dashboard header (visible to all, but page itself requires login)
-- Add navigation link on Landing Page
-
-## File Summary
-
-| Action | File |
-|--------|------|
-| Create | `src/types/analytics.ts` |
-| Create | `src/utils/analyticsStorage.ts` |
-| Create | `src/pages/ManagerAnalytics.tsx` |
-| Edit | `src/App.tsx` — add `/manager/analytics` route |
-| Edit | `src/pages/SmartAdsSystem.tsx` — record analytics events + auto-pause logic |
-| Edit | `src/components/SettingsPanel.tsx` — add auto-pause settings |
-| Edit | `src/components/VideoPlayer.tsx` — add "Waiting for audience" overlay |
-| Edit | `src/pages/LandingPage.tsx` — add Analytics nav link |
+| File | Change |
+|------|--------|
+| `src/hooks/useAdQueue.ts` | Keep all matching ads in queue, rotate through them |
+| `src/components/AdQueue.tsx` | Update footer text |
+| `src/pages/SmartAdsSystem.tsx` | Fix analytics interval to not reset on every demographics change |
 
