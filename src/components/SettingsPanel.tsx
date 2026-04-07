@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, Percent, Eye, Zap, MonitorPlay, BarChart3, HelpCircle, Download, Check, Loader2 } from 'lucide-react';
+import { Settings, Percent, Eye, Zap, MonitorPlay, BarChart3, HelpCircle, Download, Check, Loader2, PauseCircle } from 'lucide-react';
 import { getYoloModelStatus, downloadAndCacheYoloModel, clearCachedModel, DownloadProgress } from '@/utils/yoloModelDownloader';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
@@ -49,6 +49,10 @@ interface CaptureSettings {
   useDualModelForVideo: boolean;
   /** Enable YOLO detection for video files. */
   enableYoloForVideo: boolean;
+  /** Auto-pause ads when no audience is detected. */
+  autoPauseEnabled: boolean;
+  /** Interval (seconds) between presence checks when auto-paused. */
+  presenceCheckInterval: number;
 }
 
 interface SettingsPanelProps {
