@@ -113,6 +113,12 @@ const SmartAdsSystem = () => {
   const [lastSessionSummary, setLastSessionSummary] = useState<CaptureSessionSummary | null>(null);
   const [showSessionSummary, setShowSessionSummary] = useState(false);
 
+  // Auto-pause state
+  const [isAutoPaused, setIsAutoPaused] = useState(false);
+  const [nextCheckIn, setNextCheckIn] = useState<number | null>(null);
+  const presenceCheckIntervalRef = useRef<number | null>(null);
+  const presenceCountdownRef = useRef<number | null>(null);
+
   // Save manual queue to localStorage
   useEffect(() => {
     localStorage.setItem('smartads-manual-queue', JSON.stringify(manualQueue));
