@@ -159,7 +159,7 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
       return nextAd;
     }
 
-    // Auto mode: original logic
+    // Auto mode: always play the best-scored ad (queue[0])
     if (queue.length === 0) {
       const resetAds = initialAds;
       setQueue(resetAds);
@@ -168,17 +168,10 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
       return resetAds[0] || null;
     }
 
-    // Get the first ad that wasn't just played
+    // Pick the best ad from queue; avoid immediate repeat only if alternatives exist
     let nextAd = queue[0];
-    
-    // If top ad was just played, try second option
     if (nextAd.id === lastPlayedIdRef.current && queue.length > 1) {
       nextAd = queue[1];
-      // Rotate queue differently
-      setQueue(prev => [prev[1], ...prev.filter((_, i) => i !== 1)]);
-    } else {
-      // Normal rotation - move first to end
-      setQueue(prev => [...prev.slice(1), prev[0]]);
     }
     
     // Track played ads
