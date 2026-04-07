@@ -10,7 +10,6 @@ interface UseAdQueueProps {
   manualQueue?: AdMetadata[];
 }
 
-// Stable helper to calculate capture windows
 const applyCapture = (ads: AdMetadata[], startPercent: number, endPercent: number) =>
   ads.map(ad => ({
     ...ad,
@@ -18,39 +17,55 @@ const applyCapture = (ads: AdMetadata[], startPercent: number, endPercent: numbe
     captureEnd: Math.floor(ad.duration * endPercent / 100),
   }));
 
+const getDominantAudience = (demographics: DemographicCounts) => {
+  const dominantGender = demographics.male >= demographics.female ? 'male' : 'female';
+
+  let dominantAge: 'kid' | 'young' | 'adult' = 'young';
+  if (demographics.kid >= demographics.young && demographics.kid >= demographics.adult) {
+    dominantAge = 'kid';
+  } else if (demographics.adult > demographics.young && demographics.adult > demographics.kid) {
+    dominantAge = 'adult';
+  }
+
+  return { dominantGender, dominantAge };
+};
+
 export const useAdQueue = (props?: UseAdQueueProps) => {
-  const { 
-    customAds, 
-    captureStartPercent = 75, 
+  const {
+    customAds,
+    captureStartPercent = 75,
     captureEndPercent = 92,
     manualMode = false,
     manualQueue: externalManualQueue = [],
   } = props || {};
-  
+
   const manualQueueIndexRef = useRef(0);
 
-  // Use a stable initializer (only runs once) to avoid React queue errors
   const [queue, setQueue] = useState<AdMetadata[]>(() =>
     applyCapture(customAds && customAds.length > 0 ? customAds : sampleAds, captureStartPercent, captureEndPercent)
   );
+  const queueRef = useRef<AdMetadata[]>(queue);
   const [playedAds, setPlayedAds] = useState<string[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const lastPlayedIdRef = useRef<string | null>(null);
 
-  // Memoized version for internal use (not for initializing state)
+  useEffect(() => {
+    queueRef.current = queue;
+  }, [queue]);
+
   const initialAds = useMemo(() => {
     const ads = customAds && customAds.length > 0 ? customAds : sampleAds;
     return applyCapture(ads, captureStartPercent, captureEndPercent);
   }, [customAds, captureStartPercent, captureEndPercent]);
 
+  const setSyncedQueue = useCallback((ads: AdMetadata[]) => {
+    queueRef.current = ads;
+    setQueue(ads);
+  }, []);
+
   const updateQueue = useCallback((ads: AdMetadata[]) => {
-    const updatedAds = ads.map(ad => ({
-      ...ad,
-      captureStart: Math.floor(ad.duration * captureStartPercent / 100),
-      captureEnd: Math.floor(ad.duration * captureEndPercent / 100),
-    }));
-    setQueue(updatedAds);
-  }, [captureStartPercent, captureEndPercent]);
+    setSyncedQueue(applyCapture(ads, captureStartPercent, captureEndPercent));
+  }, [captureStartPercent, captureEndPercent, setSyncedQueue]);
 
   const addLog = useCallback((type: LogEntry['type'], message: string) => {
     setLogs(prev => [{
@@ -64,26 +79,17 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
     let score = 0;
     const reasons: string[] = [];
 
-    const dominantGender = demographics.male >= demographics.female ? 'male' : 'female';
-    
-    // Find dominant age group
-    let dominantAge: 'kid' | 'young' | 'adult' = 'young';
-    if (demographics.kid >= demographics.young && demographics.kid >= demographics.adult) {
-      dominantAge = 'kid';
-    } else if (demographics.adult > demographics.young && demographics.adult > demographics.kid) {
-      dominantAge = 'adult';
-    }
+    const { dominantGender, dominantAge } = getDominantAudience(demographics);
 
-    // Perfect match bonus - both gender AND age match
     const genderMatches = ad.gender === dominantGender || ad.gender === 'all';
     const ageMatches = ad.ageGroup === dominantAge || ad.ageGroup === 'all';
 
     if (ad.gender === dominantGender && ad.ageGroup === dominantAge) {
-      score += 10; // Perfect match - highest priority
+      score += 10;
       reasons.push(`★ Perfect match: ${dominantGender} + ${dominantAge}`);
     } else if (genderMatches && ageMatches) {
-      score += 5; // Both match but one is 'all'
-      reasons.push(`✓ Matches both criteria`);
+      score += 5;
+      reasons.push('✓ Matches both criteria');
     } else if (ad.gender === dominantGender) {
       score += 3;
       reasons.push(`✓ Matches ${dominantGender}`);
@@ -91,11 +97,10 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
       score += 3;
       reasons.push(`✓ Matches ${dominantAge}`);
     } else {
-      score -= 5; // Neither matches
-      reasons.push(`✗ No match`);
+      score -= 5;
+      reasons.push('✗ No match');
     }
 
-    // Penalty for recently played
     if (ad.id === lastPlayedIdRef.current) {
       score -= 3;
       reasons.push('Just played (-3)');
@@ -106,44 +111,27 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
 
   const reorderQueue = useCallback((demographics: DemographicCounts) => {
     console.log('[Queue] Reordering based on demographics:', demographics);
-    
-    // Score ALL available ads (from initial pool)
-    const allAds = customAds && customAds.length > 0 ? customAds : sampleAds;
-    const adsWithCapture = allAds.map(ad => ({
-      ...ad,
-      captureStart: Math.floor(ad.duration * captureStartPercent / 100),
-      captureEnd: Math.floor(ad.duration * captureEndPercent / 100),
-    }));
 
+    const allAds = customAds && customAds.length > 0 ? customAds : sampleAds;
+    const adsWithCapture = applyCapture(allAds, captureStartPercent, captureEndPercent);
     const scoredAds = adsWithCapture.map(ad => scoreAd(ad, demographics));
-    
-    // Sort by score descending
+
     scoredAds.sort((a, b) => b.score - a.score);
 
-    // Take only top 2 ads for the queue
     const top2 = scoredAds.slice(0, 2).map(s => s.ad);
-    
-    // Find dominant age for logging
-    let dominantAge = 'young';
-    if (demographics.kid >= demographics.young && demographics.kid >= demographics.adult) {
-      dominantAge = 'kid';
-    } else if (demographics.adult > demographics.young && demographics.adult > demographics.kid) {
-      dominantAge = 'adult';
-    }
-    
-    // Log the reordering
+    const { dominantGender, dominantAge } = getDominantAudience(demographics);
     const topAd = scoredAds[0];
+
     if (topAd) {
       console.log('[Queue] New queue (max 2):', scoredAds.slice(0, 2).map(s => `${s.ad.title}(${s.score})`).join(' > '));
-      addLog('queue', `🔄 Queue updated for ${demographics.male > demographics.female ? 'male' : 'female'} ${dominantAge}`);
+      addLog('queue', `🔄 Queue updated for ${dominantGender} ${dominantAge}`);
       addLog('queue', `Next: "${topAd.ad.title}" (score: ${topAd.score})`);
     }
 
-    setQueue(top2);
-  }, [scoreAd, addLog, customAds, captureStartPercent, captureEndPercent]);
+    setSyncedQueue(top2);
+  }, [scoreAd, addLog, customAds, captureStartPercent, captureEndPercent, setSyncedQueue]);
 
   const getNextAd = useCallback((): AdMetadata | null => {
-    // Manual mode: cycle through manual queue in order
     if (manualMode && externalManualQueue.length > 0) {
       const nextIndex = manualQueueIndexRef.current % externalManualQueue.length;
       const nextAd = {
@@ -152,38 +140,36 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
         captureEnd: Math.floor(externalManualQueue[nextIndex].duration * captureEndPercent / 100),
       };
       manualQueueIndexRef.current = (nextIndex + 1) % externalManualQueue.length;
-      
+
       addLog('ad', `▶️ Playing: "${nextAd.title}" (${nextIndex + 1}/${externalManualQueue.length})`);
       lastPlayedIdRef.current = nextAd.id;
-      
+
       return nextAd;
     }
 
-    // Auto mode: always play the best-scored ad (queue[0])
-    if (queue.length === 0) {
+    const activeQueue = queueRef.current;
+
+    if (activeQueue.length === 0) {
       const resetAds = initialAds;
-      setQueue(resetAds);
+      setSyncedQueue(resetAds);
       setPlayedAds([]);
       lastPlayedIdRef.current = null;
       return resetAds[0] || null;
     }
 
-    // Pick the best ad from queue; avoid immediate repeat only if alternatives exist
-    let nextAd = queue[0];
-    if (nextAd.id === lastPlayedIdRef.current && queue.length > 1) {
-      nextAd = queue[1];
+    let nextAd = activeQueue[0];
+    if (nextAd.id === lastPlayedIdRef.current && activeQueue.length > 1) {
+      nextAd = activeQueue[1];
     }
-    
-    // Track played ads
+
     setPlayedAds(prev => [nextAd.id, ...prev].slice(0, 5));
     lastPlayedIdRef.current = nextAd.id;
-    
-    addLog('ad', `▶️ Playing: "${nextAd.title}"`);
-    
-    return nextAd;
-  }, [queue, initialAds, addLog, manualMode, externalManualQueue, captureStartPercent, captureEndPercent]);
 
-  // Reset manual queue index when manual queue changes
+    addLog('ad', `▶️ Playing: "${nextAd.title}"`);
+
+    return nextAd;
+  }, [initialAds, addLog, manualMode, externalManualQueue, captureStartPercent, captureEndPercent, setSyncedQueue]);
+
   const resetManualQueueIndex = useCallback(() => {
     manualQueueIndexRef.current = 0;
   }, []);
