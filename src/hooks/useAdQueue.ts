@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import { AdMetadata, DemographicCounts, AdScore, LogEntry } from '@/types/ad';
 import { sampleAds } from '@/data/sampleAds';
 
@@ -40,45 +40,40 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
   } = props || {};
 
   const manualQueueIndexRef = useRef(0);
-
   const [queue, setQueue] = useState<AdMetadata[]>(() =>
     applyCapture(customAds && customAds.length > 0 ? customAds : sampleAds, captureStartPercent, captureEndPercent)
   );
-  const queueRef = useRef<AdMetadata[]>(queue);
   const [playedAds, setPlayedAds] = useState<string[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const lastPlayedIdRef = useRef<string | null>(null);
+  const selectionRef = useRef<{ lastPlayedId: string | null; latestQueue: AdMetadata[] }>({
+    lastPlayedId: null,
+    latestQueue: applyCapture(customAds && customAds.length > 0 ? customAds : sampleAds, captureStartPercent, captureEndPercent),
+  });
 
-  useEffect(() => {
-    queueRef.current = queue;
-  }, [queue]);
+  selectionRef.current.latestQueue = queue;
 
   const initialAds = useMemo(() => {
     const ads = customAds && customAds.length > 0 ? customAds : sampleAds;
     return applyCapture(ads, captureStartPercent, captureEndPercent);
   }, [customAds, captureStartPercent, captureEndPercent]);
 
-  const setSyncedQueue = useCallback((ads: AdMetadata[]) => {
-    queueRef.current = ads;
-    setQueue(ads);
-  }, []);
-
   const updateQueue = useCallback((ads: AdMetadata[]) => {
-    setSyncedQueue(applyCapture(ads, captureStartPercent, captureEndPercent));
-  }, [captureStartPercent, captureEndPercent, setSyncedQueue]);
+    const updatedAds = applyCapture(ads, captureStartPercent, captureEndPercent);
+    selectionRef.current.latestQueue = updatedAds;
+    setQueue(updatedAds);
+  }, [captureStartPercent, captureEndPercent]);
 
   const addLog = useCallback((type: LogEntry['type'], message: string) => {
     setLogs(prev => [{
       timestamp: new Date(),
       type,
-      message
+      message,
     }, ...prev].slice(0, 50));
   }, []);
 
   const scoreAd = useCallback((ad: AdMetadata, demographics: DemographicCounts): AdScore => {
     let score = 0;
     const reasons: string[] = [];
-
     const { dominantGender, dominantAge } = getDominantAudience(demographics);
 
     const genderMatches = ad.gender === dominantGender || ad.gender === 'all';
@@ -101,13 +96,13 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
       reasons.push('✗ No match');
     }
 
-    if (ad.id === lastPlayedIdRef.current) {
+    if (ad.id === selectionRef.current.lastPlayedId) {
       score -= 3;
       reasons.push('Just played (-3)');
     }
 
     return { ad, score, reasons };
-  }, [playedAds]);
+  }, []);
 
   const reorderQueue = useCallback((demographics: DemographicCounts) => {
     console.log('[Queue] Reordering based on demographics:', demographics);
@@ -128,8 +123,9 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
       addLog('queue', `Next: "${topAd.ad.title}" (score: ${topAd.score})`);
     }
 
-    setSyncedQueue(top2);
-  }, [scoreAd, addLog, customAds, captureStartPercent, captureEndPercent, setSyncedQueue]);
+    selectionRef.current.latestQueue = top2;
+    setQueue(top2);
+  }, [scoreAd, addLog, customAds, captureStartPercent, captureEndPercent]);
 
   const getNextAd = useCallback((): AdMetadata | null => {
     if (manualMode && externalManualQueue.length > 0) {
@@ -142,33 +138,34 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
       manualQueueIndexRef.current = (nextIndex + 1) % externalManualQueue.length;
 
       addLog('ad', `▶️ Playing: "${nextAd.title}" (${nextIndex + 1}/${externalManualQueue.length})`);
-      lastPlayedIdRef.current = nextAd.id;
+      selectionRef.current.lastPlayedId = nextAd.id;
 
       return nextAd;
     }
 
-    const activeQueue = queueRef.current;
+    const activeQueue = selectionRef.current.latestQueue;
 
     if (activeQueue.length === 0) {
       const resetAds = initialAds;
-      setSyncedQueue(resetAds);
+      selectionRef.current.latestQueue = resetAds;
+      setQueue(resetAds);
       setPlayedAds([]);
-      lastPlayedIdRef.current = null;
+      selectionRef.current.lastPlayedId = null;
       return resetAds[0] || null;
     }
 
     let nextAd = activeQueue[0];
-    if (nextAd.id === lastPlayedIdRef.current && activeQueue.length > 1) {
+    if (nextAd.id === selectionRef.current.lastPlayedId && activeQueue.length > 1) {
       nextAd = activeQueue[1];
     }
 
     setPlayedAds(prev => [nextAd.id, ...prev].slice(0, 5));
-    lastPlayedIdRef.current = nextAd.id;
+    selectionRef.current.lastPlayedId = nextAd.id;
 
     addLog('ad', `▶️ Playing: "${nextAd.title}"`);
 
     return nextAd;
-  }, [initialAds, addLog, manualMode, externalManualQueue, captureStartPercent, captureEndPercent, setSyncedQueue]);
+  }, [initialAds, addLog, manualMode, externalManualQueue, captureStartPercent, captureEndPercent]);
 
   const resetManualQueueIndex = useCallback(() => {
     manualQueueIndexRef.current = 0;
