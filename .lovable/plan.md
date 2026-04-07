@@ -1,40 +1,38 @@
 
 
-# Plan: Fix Ad Queue Rotation and Analytics Recording
+# Plan: Strict Audience-Based Ad Filtering
 
-## Issue 1: Queue Plays Only 2 Ads in a Loop
+## Problem
+The queue currently scores all ads but never actually filters out mismatched ones. Ads tagged `female` still appear when the audience is all male, and vice versa. The scoring system gives penalties but still includes wrong-gender ads in the queue.
 
-**Root Cause**: `reorderQueue` in `useAdQueue.ts` takes only the top 2 ads (`scoredAds.slice(0, 2)`) and `getNextAd` alternates between `queue[0]` and `queue[1]`. This creates a fixed 2-ad loop regardless of audience.
+## Solution
+Replace the soft-scoring approach in `reorderQueue` with strict filtering, then score within the filtered set.
 
-**Fix**:
-- Change `reorderQueue` to keep ALL ads sorted by relevance score (not just top 2), filtering out only negative-score ads
-- Update `getNextAd` to rotate through matching ads: pick the highest-scored ad that was NOT recently played (track last 3-4 played IDs instead of just 1)
-- When audience changes, re-score and re-sort, but maintain rotation position among the new top matches
-- Update the AdQueue component footer text from "Top 2 ads" to reflect the new behavior
+### Changes to `src/hooks/useAdQueue.ts`
 
-**File**: `src/hooks/useAdQueue.ts`
-- `reorderQueue`: keep all positively-scored ads (score > 0), sorted descending
-- `getNextAd`: iterate through the sorted queue, skip any ad in the `recentlyPlayed` list (last 3 IDs), pick the first available. If all have been played recently, pick the top-scored one
-- Track `recentlyPlayed` as a ref array of last 3 ad IDs
+**`reorderQueue` function (lines 113-140)**:
+1. Determine dominant gender and age from demographics
+2. **Hard filter**: keep only ads where `ad.gender === dominantGender || ad.gender === 'all'`
+3. Within those, score by age match (exact age match > `all` age > wrong age)
+4. Sort by score descending
+5. If the hard filter produces zero results, relax to best gender match (keep ads matching dominant gender regardless of age, plus `all`-gender ads)
+6. If still empty, fall back to all ads sorted by score (should not happen with sample data)
 
-**File**: `src/components/AdQueue.tsx`
-- Update footer text
+**`scoreAd` function (lines 75-111)**:
+- Add a strict gender filter flag. Ads with wrong gender get score = -100 (effectively excluded)
+- Keep recency penalty logic as-is
 
-## Issue 2: Analytics Not Recording on Cloned Project
+**`getNextAd` function (lines 142-195)**:
+- No changes needed — it already rotates through `selectionRef.current.latestQueue`, which will now only contain matching ads
 
-**Root Cause**: The periodic analytics recording in test mode (every 30s interval in `useEffect`) has `demographics` in its dependency array. Since `demographics` state updates every ~800ms from the detection loop, the `useEffect` re-runs constantly, destroying and recreating the 30-second `setInterval` before it ever fires. The timer never reaches 30 seconds.
+### Expected behavior
+- Audience = male young → queue contains: TechPro (male/young), PowerBoost (male/young), NexGen (all/young), WealthGuard (all/adult). Female-tagged ads completely removed.
+- Audience = female adult → queue contains: Elegance (female/adult), GlowUp (female/young), WealthGuard (all/adult), NexGen (all/young). Male-tagged ads completely removed.
+- Rotation continues among matching ads via the existing `recentlyPlayedRef` mechanism.
 
-**Fix in `src/pages/SmartAdsSystem.tsx`**:
-- Remove `demographics` and `currentAd` from the useEffect dependency array for the analytics interval
-- Instead, read demographics from `lastDemographicsRef.current` inside the interval callback (the ref is already kept in sync)
-- Read currentAd from a new ref (`currentAdRef`) to avoid stale closures
-- This way the 30s interval is created once when test mode starts and destroyed when it stops, and each tick reads the latest values from refs
-
-## Summary of Changes
+### File summary
 
 | File | Change |
 |------|--------|
-| `src/hooks/useAdQueue.ts` | Keep all matching ads in queue, rotate through them |
-| `src/components/AdQueue.tsx` | Update footer text |
-| `src/pages/SmartAdsSystem.tsx` | Fix analytics interval to not reset on every demographics change |
+| `src/hooks/useAdQueue.ts` | Hard-filter by gender in `reorderQueue`, score by age within matches |
 
