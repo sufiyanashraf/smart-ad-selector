@@ -1054,6 +1054,13 @@ const SmartAdsSystem = () => {
             Smart<span className="text-primary">Ads</span> System
           </h1>
           <div className="ml-auto flex items-center gap-3 flex-wrap">
+            {/* Analytics Link */}
+            <Link to="/manager/analytics">
+              <Button variant="outline" size="sm" className="gap-2">
+                <BarChart3 className="h-4 w-4" />
+                Analytics
+              </Button>
+            </Link>
             {/* Test Mode Toggle */}
             <div className="flex items-center gap-2">
               <Button
