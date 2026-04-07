@@ -170,6 +170,14 @@ const LandingPage = () => {
             <div className="flex items-center gap-3">
               <ThemeToggle />
               <Button
+                variant="outline"
+                onClick={() => navigate("/manager/analytics")}
+                className="hidden sm:inline-flex"
+              >
+                <BarChart3 className="w-4 h-4 mr-2" />
+                Analytics
+              </Button>
+              <Button
                 onClick={() => navigate("/dashboard")}
                 className="bg-gradient-to-r from-primary to-accent hover:opacity-90 text-primary-foreground font-semibold"
               >
