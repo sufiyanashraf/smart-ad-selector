@@ -633,6 +633,26 @@ const SmartAdsSystem = () => {
       testModeTimeoutRef.current = null;
     }
     
+    // Record final analytics snapshot before stopping
+    const total = lastDemographicsRef.current.male + lastDemographicsRef.current.female;
+    if (total > 0) {
+      const now = Date.now();
+      recordAnalyticsSession({
+        startedAt: now - 10000,
+        endedAt: now,
+        peakViewers: total,
+        totalViewers: total,
+        maleCount: lastDemographicsRef.current.male,
+        femaleCount: lastDemographicsRef.current.female,
+        kidCount: lastDemographicsRef.current.kid,
+        youngCount: lastDemographicsRef.current.young,
+        adultCount: lastDemographicsRef.current.adult,
+        adId: currentAd?.id || '',
+        adTitle: currentAd?.title || '',
+      });
+      addLog('info', '📊 Final analytics recorded');
+    }
+    
     stopDetectionLoop();
     stopWebcam();
     isCapturingRef.current = false;
@@ -640,7 +660,7 @@ const SmartAdsSystem = () => {
     setTestMode(false);
     setCurrentViewers([]);
     addLog('info', '🧪 TEST MODE: Ended');
-  }, [stopDetectionLoop, stopWebcam, addLog]);
+  }, [stopDetectionLoop, stopWebcam, addLog, currentAd]);
 
   // Toggle manual mode
   const handleManualModeToggle = useCallback((enabled: boolean) => {
