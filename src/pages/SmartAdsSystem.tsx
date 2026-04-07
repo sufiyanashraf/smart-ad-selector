@@ -1025,10 +1025,12 @@ const SmartAdsSystem = () => {
           onPause={() => setIsPlaying(false)}
           onSkip={handleSkip}
           isCapturing={isCapturing}
-          captureWindow={captureWindow}
-          isFullscreen={true}
-          onFullscreenToggle={() => setIsFullscreen(false)}
-        />
+           captureWindow={captureWindow}
+           isFullscreen={true}
+           onFullscreenToggle={() => setIsFullscreen(false)}
+           isAutoPaused={isAutoPaused}
+           nextCheckIn={nextCheckIn}
+         />
       </div>
     );
   }
@@ -1212,6 +1214,8 @@ const SmartAdsSystem = () => {
             captureWindow={captureWindow}
             isFullscreen={false}
             onFullscreenToggle={() => setIsFullscreen(true)}
+            isAutoPaused={isAutoPaused}
+            nextCheckIn={nextCheckIn}
           />
 
           <div className="grid grid-cols-1 gap-6">
