@@ -17,7 +17,8 @@ import { useWebcam } from '@/hooks/useWebcam';
 import { useFaceDetection, resetSimulatedPerson } from '@/hooks/useFaceDetection';
 import { useAdQueue } from '@/hooks/useAdQueue';
 import { sampleAds } from '@/data/sampleAds';
-import { Tv, Zap, Activity, AlertCircle, CheckCircle, Eye, EyeOff, Play, Square, Cpu, Home, Tag } from 'lucide-react';
+import { recordAnalyticsSession } from '@/utils/analyticsStorage';
+import { Tv, Zap, Activity, AlertCircle, CheckCircle, Eye, EyeOff, Play, Square, Cpu, Home, Tag, BarChart3 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -40,9 +41,11 @@ const SmartAdsSystem = () => {
     minDemographicConfidence: 0.75,
     femaleBoostFactor: 0.15,
     enableHairHeuristics: true,
-    requireFaceTexture: false, // Disabled by default - can cause real face rejection
+    requireFaceTexture: false,
     useDualModelForVideo: true,
     enableYoloForVideo: false,
+    autoPauseEnabled: false,
+    presenceCheckInterval: 30,
   });
 
   // Labeling mode for evaluation
@@ -109,6 +112,12 @@ const SmartAdsSystem = () => {
   // Session summary state - shown after capture ends
   const [lastSessionSummary, setLastSessionSummary] = useState<CaptureSessionSummary | null>(null);
   const [showSessionSummary, setShowSessionSummary] = useState(false);
+
+  // Auto-pause state
+  const [isAutoPaused, setIsAutoPaused] = useState(false);
+  const [nextCheckIn, setNextCheckIn] = useState<number | null>(null);
+  const presenceCheckIntervalRef = useRef<number | null>(null);
+  const presenceCountdownRef = useRef<number | null>(null);
 
   // Save manual queue to localStorage
   useEffect(() => {
@@ -834,6 +843,29 @@ const SmartAdsSystem = () => {
           reorderQueue(sessionDemographics);
         }
         
+        // Record analytics
+        recordAnalyticsSession({
+          startedAt: session.startedAt,
+          endedAt: Date.now(),
+          peakViewers: stableViewers.length,
+          totalViewers: stableViewers.length,
+          maleCount: sessionDemographics.male,
+          femaleCount: sessionDemographics.female,
+          kidCount: sessionDemographics.kid,
+          youngCount: sessionDemographics.young,
+          adultCount: sessionDemographics.adult,
+          adId: currentAd?.id || '',
+          adTitle: currentAd?.title || '',
+        });
+
+        // Auto-pause if no viewers and auto-pause enabled
+        if (stableViewers.length === 0 && captureSettings.autoPauseEnabled) {
+          setIsAutoPaused(true);
+          setIsPlaying(false);
+          addLog('info', '⏸️ Auto-paused: no audience detected');
+          startPresenceChecks();
+        }
+        
         // Clear session
         captureSessionRef.current = null;
         
@@ -843,17 +875,72 @@ const SmartAdsSystem = () => {
         }, 8000);
       }
     }
-  }, [currentTime, currentAd, isPlaying, manualMode, startWebcam, stopWebcam, startDetectionLoop, stopDetectionLoop, addLog, reorderQueue]);
+  }, [currentTime, currentAd, isPlaying, manualMode, startWebcam, stopWebcam, startDetectionLoop, stopDetectionLoop, addLog, reorderQueue, captureSettings.autoPauseEnabled]);
+
+  // ─── Auto-pause presence checking ──────────────────────────
+  const stopPresenceChecks = useCallback(() => {
+    if (presenceCheckIntervalRef.current) {
+      window.clearInterval(presenceCheckIntervalRef.current);
+      presenceCheckIntervalRef.current = null;
+    }
+    if (presenceCountdownRef.current) {
+      window.clearInterval(presenceCountdownRef.current);
+      presenceCountdownRef.current = null;
+    }
+    setNextCheckIn(null);
+  }, []);
+
+  const startPresenceChecks = useCallback(() => {
+    stopPresenceChecks();
+    const baseInterval = captureSettings.presenceCheckInterval;
+    // Add jitter: +/- 5 seconds
+    const jitter = Math.floor(Math.random() * 10) - 5;
+    const interval = Math.max(10, baseInterval + jitter) * 1000;
+
+    let countdown = Math.round(interval / 1000);
+    setNextCheckIn(countdown);
+
+    presenceCountdownRef.current = window.setInterval(() => {
+      countdown--;
+      setNextCheckIn(Math.max(0, countdown));
+    }, 1000);
+
+    presenceCheckIntervalRef.current = window.setInterval(async () => {
+      addLog('info', '👀 Presence check: scanning for audience...');
+      
+      // Try to start webcam for a single check
+      const started = await startWebcam();
+      if (started && videoRef.current) {
+        const results = await detectFaces(videoRef.current);
+        stopWebcam();
+
+        if (results.length > 0) {
+          addLog('info', `✅ Audience detected (${results.length} faces) — resuming ads`);
+          setIsAutoPaused(false);
+          setIsPlaying(true);
+          stopPresenceChecks();
+        } else {
+          addLog('info', '❌ No audience — staying paused');
+          // Reset countdown
+          countdown = Math.round(interval / 1000);
+          setNextCheckIn(countdown);
+        }
+      } else {
+        addLog('info', '⚠️ Could not activate camera for presence check');
+      }
+    }, interval);
+  }, [captureSettings.presenceCheckInterval, startWebcam, stopWebcam, detectFaces, videoRef, addLog, stopPresenceChecks]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       stopDetectionLoop();
+      stopPresenceChecks();
       if (testModeTimeoutRef.current) {
         window.clearTimeout(testModeTimeoutRef.current);
       }
     };
-  }, [stopDetectionLoop]);
+  }, [stopDetectionLoop, stopPresenceChecks]);
 
   const handleTimeUpdate = useCallback((time: number) => {
     setCurrentTime(time);
@@ -938,10 +1025,12 @@ const SmartAdsSystem = () => {
           onPause={() => setIsPlaying(false)}
           onSkip={handleSkip}
           isCapturing={isCapturing}
-          captureWindow={captureWindow}
-          isFullscreen={true}
-          onFullscreenToggle={() => setIsFullscreen(false)}
-        />
+           captureWindow={captureWindow}
+           isFullscreen={true}
+           onFullscreenToggle={() => setIsFullscreen(false)}
+           isAutoPaused={isAutoPaused}
+           nextCheckIn={nextCheckIn}
+         />
       </div>
     );
   }
@@ -965,6 +1054,13 @@ const SmartAdsSystem = () => {
             Smart<span className="text-primary">Ads</span> System
           </h1>
           <div className="ml-auto flex items-center gap-3 flex-wrap">
+            {/* Analytics Link */}
+            <Link to="/manager/analytics">
+              <Button variant="outline" size="sm" className="gap-2">
+                <BarChart3 className="h-4 w-4" />
+                Analytics
+              </Button>
+            </Link>
             {/* Test Mode Toggle */}
             <div className="flex items-center gap-2">
               <Button
@@ -1125,6 +1221,8 @@ const SmartAdsSystem = () => {
             captureWindow={captureWindow}
             isFullscreen={false}
             onFullscreenToggle={() => setIsFullscreen(true)}
+            isAutoPaused={isAutoPaused}
+            nextCheckIn={nextCheckIn}
           />
 
           <div className="grid grid-cols-1 gap-6">
