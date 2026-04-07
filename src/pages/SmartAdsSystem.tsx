@@ -931,6 +931,69 @@ const SmartAdsSystem = () => {
     }, interval);
   }, [captureSettings.presenceCheckInterval, startWebcam, stopWebcam, detectFaces, videoRef, addLog, stopPresenceChecks]);
 
+  // ─── Reorder queue when demographics change in test mode ───
+  const reorderDebounceRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!testMode || manualMode) return;
+    const total = demographics.male + demographics.female;
+    if (total === 0) return;
+
+    // Debounce: reorder 1.5s after last demographic change
+    if (reorderDebounceRef.current) window.clearTimeout(reorderDebounceRef.current);
+    reorderDebounceRef.current = window.setTimeout(() => {
+      console.log('[TestMode] Demographics changed, reordering queue:', demographics);
+      reorderQueue(demographics);
+    }, 1500);
+
+    return () => {
+      if (reorderDebounceRef.current) window.clearTimeout(reorderDebounceRef.current);
+    };
+  }, [demographics, testMode, manualMode, reorderQueue]);
+
+  // ─── Periodic analytics recording in test mode ────────────
+  const analyticsIntervalRef = useRef<number | null>(null);
+  const lastAnalyticsRecordRef = useRef<number>(0);
+  useEffect(() => {
+    if (!testMode || manualMode) {
+      if (analyticsIntervalRef.current) {
+        window.clearInterval(analyticsIntervalRef.current);
+        analyticsIntervalRef.current = null;
+      }
+      return;
+    }
+
+    // Record analytics every 30 seconds during test mode
+    analyticsIntervalRef.current = window.setInterval(() => {
+      const now = Date.now();
+      const total = demographics.male + demographics.female;
+      if (total === 0) return;
+      if (now - lastAnalyticsRecordRef.current < 25000) return; // Avoid double-recording
+
+      lastAnalyticsRecordRef.current = now;
+      recordAnalyticsSession({
+        startedAt: now - 30000,
+        endedAt: now,
+        peakViewers: total,
+        totalViewers: total,
+        maleCount: demographics.male,
+        femaleCount: demographics.female,
+        kidCount: demographics.kid,
+        youngCount: demographics.young,
+        adultCount: demographics.adult,
+        adId: currentAd?.id || '',
+        adTitle: currentAd?.title || '',
+      });
+      addLog('info', '📊 Analytics recorded (test mode snapshot)');
+    }, 30000);
+
+    return () => {
+      if (analyticsIntervalRef.current) {
+        window.clearInterval(analyticsIntervalRef.current);
+        analyticsIntervalRef.current = null;
+      }
+    };
+  }, [testMode, manualMode, demographics, currentAd, addLog]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -938,6 +1001,9 @@ const SmartAdsSystem = () => {
       stopPresenceChecks();
       if (testModeTimeoutRef.current) {
         window.clearTimeout(testModeTimeoutRef.current);
+      }
+      if (analyticsIntervalRef.current) {
+        window.clearInterval(analyticsIntervalRef.current);
       }
     };
   }, [stopDetectionLoop, stopPresenceChecks]);
