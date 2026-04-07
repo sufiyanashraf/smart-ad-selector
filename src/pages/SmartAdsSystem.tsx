@@ -843,6 +843,29 @@ const SmartAdsSystem = () => {
           reorderQueue(sessionDemographics);
         }
         
+        // Record analytics
+        recordAnalyticsSession({
+          startedAt: session.startedAt,
+          endedAt: Date.now(),
+          peakViewers: stableViewers.length,
+          totalViewers: stableViewers.length,
+          maleCount: sessionDemographics.male,
+          femaleCount: sessionDemographics.female,
+          kidCount: sessionDemographics.kid,
+          youngCount: sessionDemographics.young,
+          adultCount: sessionDemographics.adult,
+          adId: currentAd?.id || '',
+          adTitle: currentAd?.title || '',
+        });
+
+        // Auto-pause if no viewers and auto-pause enabled
+        if (stableViewers.length === 0 && captureSettings.autoPauseEnabled) {
+          setIsAutoPaused(true);
+          setIsPlaying(false);
+          addLog('info', '⏸️ Auto-paused: no audience detected');
+          startPresenceChecks();
+        }
+        
         // Clear session
         captureSessionRef.current = null;
         
@@ -852,7 +875,7 @@ const SmartAdsSystem = () => {
         }, 8000);
       }
     }
-  }, [currentTime, currentAd, isPlaying, manualMode, startWebcam, stopWebcam, startDetectionLoop, stopDetectionLoop, addLog, reorderQueue]);
+  }, [currentTime, currentAd, isPlaying, manualMode, startWebcam, stopWebcam, startDetectionLoop, stopDetectionLoop, addLog, reorderQueue, captureSettings.autoPauseEnabled]);
 
   // Cleanup on unmount
   useEffect(() => {
