@@ -407,6 +407,50 @@ export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps
             </div>
           </div>
 
+          {/* Auto-Pause */}
+          <div className="space-y-3 p-3 rounded-lg bg-orange-500/10 border border-orange-500/20">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5 flex-1">
+                <Label className="flex items-center gap-2">
+                  <PauseCircle className="h-4 w-4 text-orange-500" />
+                  Auto-Pause Ads
+                  <InfoTooltip text="Automatically pauses ad playback when no audience is detected. The system periodically checks the camera for new arrivals and resumes ads when someone appears." />
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  ⏸️ Stop ads when nobody is watching, resume when audience arrives
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                checked={localSettings.autoPauseEnabled}
+                onChange={(e) => setLocalSettings(prev => ({ ...prev, autoPauseEnabled: e.target.checked }))}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+            </div>
+
+            {localSettings.autoPauseEnabled && (
+              <div className="space-y-2 pt-2 border-t border-orange-500/20">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs flex items-center gap-1">
+                    Presence Check Interval
+                    <InfoTooltip text="How often (in seconds) the system checks the camera for new audience while ads are paused. Lower = faster response but uses more resources." />
+                  </Label>
+                  <span className="text-sm font-bold text-orange-500">
+                    {localSettings.presenceCheckInterval}s
+                  </span>
+                </div>
+                <Slider
+                  value={[localSettings.presenceCheckInterval]}
+                  onValueChange={(v) => setLocalSettings(prev => ({ ...prev, presenceCheckInterval: v[0] }))}
+                  min={15} max={60} step={5}
+                />
+                <p className="text-xs text-muted-foreground">
+                  🔄 15s = quick response | 60s = battery saver
+                </p>
+              </div>
+            )}
+          </div>
+
           {/* Evaluation Dashboard Link */}
           <div className="p-3 rounded-lg bg-muted/50 border border-border">
             <a 
