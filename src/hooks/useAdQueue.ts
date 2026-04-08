@@ -166,15 +166,8 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
     const activeQueue = selectionRef.current.latestQueue;
 
     if (activeQueue.length === 0) {
-      console.warn('[Queue] activeQueue is empty — this should not happen with fallback logic. Keeping current queue.');
-      // Don't reset to initialAds — that destroys audience filtering
-      // Instead, try to use the queue state as fallback
-      const fallback = initialAds;
-      if (fallback.length > 0) {
-        addLog('queue', '⚠️ Queue empty, using full ad library as last resort');
-        selectionRef.current.latestQueue = fallback;
-        return fallback[0];
-      }
+      console.warn('[Queue] activeQueue is empty — refusing to reset to the full library.');
+      addLog('queue', '⚠️ Queue is empty after filtering; waiting for next audience update');
       return null;
     }
 
@@ -203,7 +196,7 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
     addLog('ad', `▶️ Playing: "${nextAd.title}"`);
 
     return nextAd;
-  }, [initialAds, addLog, manualMode, externalManualQueue, captureStartPercent, captureEndPercent]);
+  }, [addLog, manualMode, externalManualQueue, captureStartPercent, captureEndPercent]);
 
   const resetManualQueueIndex = useCallback(() => {
     manualQueueIndexRef.current = 0;
