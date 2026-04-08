@@ -104,6 +104,32 @@ const ManagerAnalytics = () => {
 
   const refresh = useCallback(() => setRefreshKey(k => k + 1), []);
 
+  // Auto-refresh every 5 seconds to pick up new data from dashboard
+  useEffect(() => {
+    if (!authed) return;
+    const interval = setInterval(() => setRefreshKey(k => k + 1), 5000);
+    return () => clearInterval(interval);
+  }, [authed]);
+
+  const importFileRef = useRef<HTMLInputElement>(null);
+
+  const handleImport = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const result = importAnalyticsJSON(reader.result as string);
+        refresh();
+        alert(`Imported ${result.importedSessions} sessions and ${result.importedEvents} events.`);
+      } catch {
+        alert('Invalid analytics JSON file.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }, [refresh]);
+
   // Derive all data
   const totals: AllTimeTotals = useMemo(() => getAllTimeTotals(), [refreshKey]);
   const hourly: HourlyBucket[] = useMemo(() => getHourlyTimeline(selectedDate), [selectedDate, refreshKey]);
@@ -181,6 +207,10 @@ const ManagerAnalytics = () => {
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={handleExportJSON} className="gap-2">
                 <Download className="h-4 w-4" /> Export JSON
+              </Button>
+              <input ref={importFileRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
+              <Button variant="outline" size="sm" onClick={() => importFileRef.current?.click()} className="gap-2">
+                <Upload className="h-4 w-4" /> Import JSON
               </Button>
               <Button variant="outline" size="sm" onClick={handlePrint} className="gap-2">
                 <FileText className="h-4 w-4" /> Export PDF
