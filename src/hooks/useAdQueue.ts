@@ -51,7 +51,8 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
     latestQueue: applyCapture(customAds && customAds.length > 0 ? customAds : sampleAds, captureStartPercent, captureEndPercent),
   });
 
-  selectionRef.current.latestQueue = queue;
+  // NOTE: Do NOT sync selectionRef from queue state — it overwrites filtered results.
+  // selectionRef.latestQueue is updated only inside reorderQueue() and updateQueue().
 
   const initialAds = useMemo(() => {
     const ads = customAds && customAds.length > 0 ? customAds : sampleAds;
