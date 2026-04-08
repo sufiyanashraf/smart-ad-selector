@@ -217,9 +217,14 @@ const SmartAdsSystem = () => {
     manualQueue,
   });
 
-  // Update queue when ads change
+  // Update queue when the ad LIBRARY changes (not after reorder)
+  const prevAdsJsonRef = useRef<string>('');
   useEffect(() => {
-    updateQueue(adsWithCaptureWindows);
+    const json = JSON.stringify(adsWithCaptureWindows.map(a => a.id + a.duration));
+    if (json !== prevAdsJsonRef.current) {
+      prevAdsJsonRef.current = json;
+      updateQueue(adsWithCaptureWindows);
+    }
   }, [adsWithCaptureWindows, updateQueue]);
 
   // Initialize with first ad

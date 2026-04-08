@@ -165,13 +165,16 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
     const activeQueue = selectionRef.current.latestQueue;
 
     if (activeQueue.length === 0) {
-      const resetAds = initialAds;
-      selectionRef.current.latestQueue = resetAds;
-      setQueue(resetAds);
-      setPlayedAds([]);
-      recentlyPlayedRef.current = [];
-      selectionRef.current.lastPlayedId = null;
-      return resetAds[0] || null;
+      console.warn('[Queue] activeQueue is empty — this should not happen with fallback logic. Keeping current queue.');
+      // Don't reset to initialAds — that destroys audience filtering
+      // Instead, try to use the queue state as fallback
+      const fallback = initialAds;
+      if (fallback.length > 0) {
+        addLog('queue', '⚠️ Queue empty, using full ad library as last resort');
+        selectionRef.current.latestQueue = fallback;
+        return fallback[0];
+      }
+      return null;
     }
 
     // Pick the first ad in the sorted queue that hasn't been recently played

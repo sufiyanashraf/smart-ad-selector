@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { format } from 'date-fns';
@@ -6,7 +6,7 @@ import {
   Users, UserCircle2, User, Baby, Smile, Briefcase,
   Clock, TrendingUp, BarChart3, Download, Lock,
   Home, CalendarIcon, FileText, Trash2, ArrowLeft,
-  LogOut,
+  LogOut, Upload,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -33,6 +33,7 @@ import {
   getSessionsInRange,
   exportAnalyticsJSON,
   clearAllAnalytics,
+  importAnalyticsJSON,
 } from '@/utils/analyticsStorage';
 import type { AllTimeTotals, HourlyBucket, AnalyticsSession } from '@/types/analytics';
 
