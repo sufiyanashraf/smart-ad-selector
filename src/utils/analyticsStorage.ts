@@ -258,3 +258,37 @@ export function exportAnalyticsJSON(): string {
     2
   );
 }
+
+export function importAnalyticsJSON(json: string): { importedSessions: number; importedEvents: number } {
+  const data = JSON.parse(json);
+  const existingEvents = getEvents();
+  const existingSessions = getSessions();
+
+  const existingEventIds = new Set(existingEvents.map(e => e.id));
+  const existingSessionIds = new Set(existingSessions.map(s => s.id));
+
+  let importedEvents = 0;
+  let importedSessions = 0;
+
+  if (Array.isArray(data.events)) {
+    for (const e of data.events) {
+      if (e.id && !existingEventIds.has(e.id)) {
+        existingEvents.push(e);
+        importedEvents++;
+      }
+    }
+    saveEvents(existingEvents);
+  }
+
+  if (Array.isArray(data.sessions)) {
+    for (const s of data.sessions) {
+      if (s.id && !existingSessionIds.has(s.id)) {
+        existingSessions.push(s);
+        importedSessions++;
+      }
+    }
+    saveSessions(existingSessions);
+  }
+
+  return { importedSessions, importedEvents };
+}
