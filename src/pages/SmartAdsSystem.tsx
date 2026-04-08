@@ -956,24 +956,38 @@ const SmartAdsSystem = () => {
     }, interval);
   }, [captureSettings.presenceCheckInterval, startWebcam, stopWebcam, detectFaces, videoRef, addLog, stopPresenceChecks]);
 
-  // ─── Reorder queue when demographics change in test mode ───
+  // ─── Reorder queue when live audience changes ──────────────
   const reorderDebounceRef = useRef<number | null>(null);
+  const lastQueueAudienceKeyRef = useRef<string>('');
   useEffect(() => {
-    if (!testMode || manualMode) return;
-    const total = demographics.male + demographics.female;
-    if (total === 0) return;
+    if (manualMode) return;
 
-    // Debounce: reorder 1.5s after last demographic change
+    const total = demographics.male + demographics.female;
+    if (total === 0) {
+      lastQueueAudienceKeyRef.current = '';
+      if (reorderDebounceRef.current) {
+        window.clearTimeout(reorderDebounceRef.current);
+        reorderDebounceRef.current = null;
+      }
+      return;
+    }
+
+    const audienceKey = JSON.stringify(demographics);
+    if (audienceKey === lastQueueAudienceKeyRef.current) {
+      return;
+    }
+
     if (reorderDebounceRef.current) window.clearTimeout(reorderDebounceRef.current);
     reorderDebounceRef.current = window.setTimeout(() => {
-      console.log('[TestMode] Demographics changed, reordering queue:', demographics);
+      lastQueueAudienceKeyRef.current = audienceKey;
+      console.log('[Queue] Live demographics changed, reordering queue:', demographics);
       reorderQueue(demographics);
-    }, 1500);
+    }, 400);
 
     return () => {
       if (reorderDebounceRef.current) window.clearTimeout(reorderDebounceRef.current);
     };
-  }, [demographics, testMode, manualMode, reorderQueue]);
+  }, [demographics, manualMode, reorderQueue]);
 
   // ─── Periodic analytics recording in test mode ────────────
   const analyticsIntervalRef = useRef<number | null>(null);
