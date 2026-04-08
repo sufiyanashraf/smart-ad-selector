@@ -1,38 +1,70 @@
 
 
-# Plan: Strict Audience-Based Ad Filtering
+# Plan: Fix Ad Queue Filtering and Analytics Import/Export
 
-## Problem
-The queue currently scores all ads but never actually filters out mismatched ones. Ads tagged `female` still appear when the audience is all male, and vice versa. The scoring system gives penalties but still includes wrong-gender ads in the queue.
+## Problem 1: Queue Not Filtering by Audience
 
-## Solution
-Replace the soft-scoring approach in `reorderQueue` with strict filtering, then score within the filtered set.
+I traced through the entire flow and found **three concrete bugs**:
 
-### Changes to `src/hooks/useAdQueue.ts`
+### Bug A: `selectionRef` gets overwritten every render (line 54)
+```
+selectionRef.current.latestQueue = queue;
+```
+This runs on **every render**. When `reorderQueue` filters ads and calls `setQueue(filteredAds)`, React batches the state update. Before the re-render commits, subsequent renders still have the old `queue` state, and line 54 overwrites `selectionRef.current.latestQueue` back to the unfiltered list. This means `getNextAd()` reads stale, unfiltered data.
 
-**`reorderQueue` function (lines 113-140)**:
-1. Determine dominant gender and age from demographics
-2. **Hard filter**: keep only ads where `ad.gender === dominantGender || ad.gender === 'all'`
-3. Within those, score by age match (exact age match > `all` age > wrong age)
-4. Sort by score descending
-5. If the hard filter produces zero results, relax to best gender match (keep ads matching dominant gender regardless of age, plus `all`-gender ads)
-6. If still empty, fall back to all ads sorted by score (should not happen with sample data)
+**Fix**: Remove line 54 entirely. `reorderQueue` already sets `selectionRef.current.latestQueue = finalAds` directly (line 145). The ref should only be written inside `reorderQueue` and `updateQueue`, never synced from state.
 
-**`scoreAd` function (lines 75-111)**:
-- Add a strict gender filter flag. Ads with wrong gender get score = -100 (effectively excluded)
-- Keep recency penalty logic as-is
+### Bug B: `updateQueue` on line 221 resets the filtered queue
+```js
+useEffect(() => {
+  updateQueue(adsWithCaptureWindows); // resets to ALL ads
+}, [adsWithCaptureWindows, updateQueue]);
+```
+This runs on mount and whenever ads change. `updateQueue` sets `selectionRef.current.latestQueue` to ALL ads with capture windows applied. If this effect re-fires after `reorderQueue` has filtered the queue, it undoes the filtering. Since `adsWithCaptureWindows` is a `useMemo` that creates a new array reference when `customAds` or `captureSettings` change, this can trigger unexpectedly.
 
-**`getNextAd` function (lines 142-195)**:
-- No changes needed — it already rotates through `selectionRef.current.latestQueue`, which will now only contain matching ads
+**Fix**: Guard the effect so it only runs when the ad library actually changes (not on every memo recalc). Use a ref to track previous ads and skip if unchanged.
 
-### Expected behavior
-- Audience = male young → queue contains: TechPro (male/young), PowerBoost (male/young), NexGen (all/young), WealthGuard (all/adult). Female-tagged ads completely removed.
-- Audience = female adult → queue contains: Elegance (female/adult), GlowUp (female/young), WealthGuard (all/adult), NexGen (all/young). Male-tagged ads completely removed.
-- Rotation continues among matching ads via the existing `recentlyPlayedRef` mechanism.
+### Bug C: `getNextAd` falls back to `initialAds` when queue is empty
+Lines 167-175: if `activeQueue.length === 0`, it resets to `initialAds` (all ads, unfiltered). This destroys any audience filtering.
 
-### File summary
+**Fix**: When the filtered queue is empty (which shouldn't happen with the "best gender match" fallback), log a warning but keep the current queue rather than resetting to all ads.
+
+### Files changed: `src/hooks/useAdQueue.ts`
+- Remove line 54 (`selectionRef.current.latestQueue = queue`)
+- Guard `updateQueue` effect in SmartAdsSystem or add a check in `updateQueue` to not overwrite if a reorder is active
+- Fix empty-queue fallback in `getNextAd`
+- Add console.log in `reorderQueue` showing the final filtered list for debugging
+
+### Files changed: `src/pages/SmartAdsSystem.tsx`
+- Guard the `updateQueue` effect (line 221) to only run on actual ad library changes, not after reorder
+
+---
+
+## Problem 2: Analytics Not Showing on Local Clone
+
+The analytics storage layer (`analyticsStorage.ts`) is correct -- it reads/writes localStorage. The `ManagerAnalytics` page reads from localStorage on mount via `useMemo` keyed on `refreshKey`.
+
+The issue is that `ManagerAnalytics` has **no way to know** when new data is written from the dashboard (which runs on a different route/page). The `refreshKey` only updates on manual button click. There is no `storage` event listener and no polling.
+
+**Fix**:
+- Add a `useEffect` in `ManagerAnalytics` that polls localStorage every 5 seconds (incrementing `refreshKey`) while the page is open
+- Add Import/Export buttons: Export downloads the JSON (already exists). Add an Import button that reads a JSON file and merges sessions into localStorage.
+
+### Files changed: `src/pages/ManagerAnalytics.tsx`
+- Add auto-refresh polling (every 5s, increment refreshKey)
+- Add Import button that reads a JSON file, parses sessions/events, merges with existing data
+
+### Files changed: `src/utils/analyticsStorage.ts`
+- Add `importAnalyticsJSON(json: string)` function that merges imported sessions/events with existing ones (deduplicating by ID)
+
+---
+
+## Summary
 
 | File | Change |
 |------|--------|
-| `src/hooks/useAdQueue.ts` | Hard-filter by gender in `reorderQueue`, score by age within matches |
+| `src/hooks/useAdQueue.ts` | Remove ref-from-state sync (line 54), fix empty-queue fallback |
+| `src/pages/SmartAdsSystem.tsx` | Guard `updateQueue` effect to not overwrite filtered queue |
+| `src/pages/ManagerAnalytics.tsx` | Add auto-refresh polling + Import button |
+| `src/utils/analyticsStorage.ts` | Add `importAnalyticsJSON` function |
 
