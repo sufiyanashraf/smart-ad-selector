@@ -15,12 +15,12 @@ export interface GroundTruthEntry {
   };
   // Detection values
   detectedGender: 'male' | 'female';
-  detectedAgeGroup: 'kid' | 'young' | 'adult';
+  detectedAgeGroup: 'child' | 'teen' | 'youngAdult' | 'middleAged' | 'senior';
   detectedConfidence: number;
   detectedFaceScore: number;
   // Ground truth (user-corrected)
   actualGender: 'male' | 'female';
-  actualAgeGroup: 'kid' | 'young' | 'adult';
+  actualAgeGroup: 'child' | 'teen' | 'youngAdult' | 'middleAged' | 'senior';
   isFalsePositive: boolean; // Not a real face
 }
 
@@ -41,9 +41,11 @@ export interface EvaluationMetrics {
   femalePrecision: number; // % of female detections that are actually female
   // Age metrics
   ageAccuracy: number;
-  kidAccuracy: number;
-  youngAccuracy: number;
-  adultAccuracy: number;
+  childAccuracy: number;
+  teenAccuracy: number;
+  youngAdultAccuracy: number;
+  middleAgedAccuracy: number;
+  seniorAccuracy: number;
   // False positive metrics
   falsePositiveRate: number;
   trueDetectionRate: number;
@@ -62,15 +64,31 @@ export interface ConfusionMatrix {
   };
   // Age: [predicted][actual]
   age: {
-    kidAsKid: number;
-    kidAsYoung: number;
-    kidAsAdult: number;
-    youngAsKid: number;
-    youngAsYoung: number;
-    youngAsAdult: number;
-    adultAsKid: number;
-    adultAsYoung: number;
-    adultAsAdult: number;
+    childAsChild: number;
+    childAsTeen: number;
+    childAsYoungAdult: number;
+    childAsMiddleAged: number;
+    childAsSenior: number;
+    teenAsChild: number;
+    teenAsTeen: number;
+    teenAsYoungAdult: number;
+    teenAsMiddleAged: number;
+    teenAsSenior: number;
+    youngAdultAsChild: number;
+    youngAdultAsTeen: number;
+    youngAdultAsYoungAdult: number;
+    youngAdultAsMiddleAged: number;
+    youngAdultAsSenior: number;
+    middleAgedAsChild: number;
+    middleAgedAsTeen: number;
+    middleAgedAsYoungAdult: number;
+    middleAgedAsMiddleAged: number;
+    middleAgedAsSenior: number;
+    seniorAsChild: number;
+    seniorAsTeen: number;
+    seniorAsYoungAdult: number;
+    seniorAsMiddleAged: number;
+    seniorAsSenior: number;
   };
 }
 
@@ -84,9 +102,11 @@ export function calculateMetrics(entries: GroundTruthEntry[]): EvaluationMetrics
       malePrecision: 0,
       femalePrecision: 0,
       ageAccuracy: 0,
-      kidAccuracy: 0,
-      youngAccuracy: 0,
-      adultAccuracy: 0,
+      childAccuracy: 0,
+      teenAccuracy: 0,
+      youngAdultAccuracy: 0,
+      middleAgedAccuracy: 0,
+      seniorAccuracy: 0,
       falsePositiveRate: 0,
       trueDetectionRate: 0,
       avgConfidenceCorrect: 0,
@@ -120,17 +140,25 @@ export function calculateMetrics(entries: GroundTruthEntry[]): EvaluationMetrics
   const ageAccuracy = realFaces.length > 0 ? ageCorrect.length / realFaces.length : 0;
   
   // Per-age-group accuracy
-  const kids = realFaces.filter(e => e.actualAgeGroup === 'kid');
-  const kidCorrect = kids.filter(e => e.detectedAgeGroup === 'kid');
-  const kidAccuracy = kids.length > 0 ? kidCorrect.length / kids.length : 0;
+  const children = realFaces.filter(e => e.actualAgeGroup === 'child');
+  const childCorrect = children.filter(e => e.detectedAgeGroup === 'child');
+  const childAccuracy = children.length > 0 ? childCorrect.length / children.length : 0;
   
-  const youngs = realFaces.filter(e => e.actualAgeGroup === 'young');
-  const youngCorrect = youngs.filter(e => e.detectedAgeGroup === 'young');
-  const youngAccuracy = youngs.length > 0 ? youngCorrect.length / youngs.length : 0;
+  const teens = realFaces.filter(e => e.actualAgeGroup === 'teen');
+  const teenCorrect = teens.filter(e => e.detectedAgeGroup === 'teen');
+  const teenAccuracy = teens.length > 0 ? teenCorrect.length / teens.length : 0;
   
-  const adults = realFaces.filter(e => e.actualAgeGroup === 'adult');
-  const adultCorrect = adults.filter(e => e.detectedAgeGroup === 'adult');
-  const adultAccuracy = adults.length > 0 ? adultCorrect.length / adults.length : 0;
+  const youngAdults = realFaces.filter(e => e.actualAgeGroup === 'youngAdult');
+  const youngAdultCorrect = youngAdults.filter(e => e.detectedAgeGroup === 'youngAdult');
+  const youngAdultAccuracy = youngAdults.length > 0 ? youngAdultCorrect.length / youngAdults.length : 0;
+  
+  const middleAgeds = realFaces.filter(e => e.actualAgeGroup === 'middleAged');
+  const middleAgedCorrect = middleAgeds.filter(e => e.detectedAgeGroup === 'middleAged');
+  const middleAgedAccuracy = middleAgeds.length > 0 ? middleAgedCorrect.length / middleAgeds.length : 0;
+  
+  const seniors = realFaces.filter(e => e.actualAgeGroup === 'senior');
+  const seniorCorrect = seniors.filter(e => e.detectedAgeGroup === 'senior');
+  const seniorAccuracy = seniors.length > 0 ? seniorCorrect.length / seniors.length : 0;
   
   // False positive rate
   const falsePositiveRate = entries.length > 0 ? falsePositives.length / entries.length : 0;
@@ -154,9 +182,11 @@ export function calculateMetrics(entries: GroundTruthEntry[]): EvaluationMetrics
     malePrecision,
     femalePrecision,
     ageAccuracy,
-    kidAccuracy,
-    youngAccuracy,
-    adultAccuracy,
+    childAccuracy,
+    teenAccuracy,
+    youngAdultAccuracy,
+    middleAgedAccuracy,
+    seniorAccuracy,
     falsePositiveRate,
     trueDetectionRate,
     avgConfidenceCorrect,
@@ -175,15 +205,31 @@ export function calculateConfusionMatrix(entries: GroundTruthEntry[]): Confusion
       femaleAsFemale: realFaces.filter(e => e.detectedGender === 'female' && e.actualGender === 'female').length,
     },
     age: {
-      kidAsKid: realFaces.filter(e => e.detectedAgeGroup === 'kid' && e.actualAgeGroup === 'kid').length,
-      kidAsYoung: realFaces.filter(e => e.detectedAgeGroup === 'kid' && e.actualAgeGroup === 'young').length,
-      kidAsAdult: realFaces.filter(e => e.detectedAgeGroup === 'kid' && e.actualAgeGroup === 'adult').length,
-      youngAsKid: realFaces.filter(e => e.detectedAgeGroup === 'young' && e.actualAgeGroup === 'kid').length,
-      youngAsYoung: realFaces.filter(e => e.detectedAgeGroup === 'young' && e.actualAgeGroup === 'young').length,
-      youngAsAdult: realFaces.filter(e => e.detectedAgeGroup === 'young' && e.actualAgeGroup === 'adult').length,
-      adultAsKid: realFaces.filter(e => e.detectedAgeGroup === 'adult' && e.actualAgeGroup === 'kid').length,
-      adultAsYoung: realFaces.filter(e => e.detectedAgeGroup === 'adult' && e.actualAgeGroup === 'young').length,
-      adultAsAdult: realFaces.filter(e => e.detectedAgeGroup === 'adult' && e.actualAgeGroup === 'adult').length,
+      childAsChild: realFaces.filter(e => e.detectedAgeGroup === 'child' && e.actualAgeGroup === 'child').length,
+      childAsTeen: realFaces.filter(e => e.detectedAgeGroup === 'child' && e.actualAgeGroup === 'teen').length,
+      childAsYoungAdult: realFaces.filter(e => e.detectedAgeGroup === 'child' && e.actualAgeGroup === 'youngAdult').length,
+      childAsMiddleAged: realFaces.filter(e => e.detectedAgeGroup === 'child' && e.actualAgeGroup === 'middleAged').length,
+      childAsSenior: realFaces.filter(e => e.detectedAgeGroup === 'child' && e.actualAgeGroup === 'senior').length,
+      teenAsChild: realFaces.filter(e => e.detectedAgeGroup === 'teen' && e.actualAgeGroup === 'child').length,
+      teenAsTeen: realFaces.filter(e => e.detectedAgeGroup === 'teen' && e.actualAgeGroup === 'teen').length,
+      teenAsYoungAdult: realFaces.filter(e => e.detectedAgeGroup === 'teen' && e.actualAgeGroup === 'youngAdult').length,
+      teenAsMiddleAged: realFaces.filter(e => e.detectedAgeGroup === 'teen' && e.actualAgeGroup === 'middleAged').length,
+      teenAsSenior: realFaces.filter(e => e.detectedAgeGroup === 'teen' && e.actualAgeGroup === 'senior').length,
+      youngAdultAsChild: realFaces.filter(e => e.detectedAgeGroup === 'youngAdult' && e.actualAgeGroup === 'child').length,
+      youngAdultAsTeen: realFaces.filter(e => e.detectedAgeGroup === 'youngAdult' && e.actualAgeGroup === 'teen').length,
+      youngAdultAsYoungAdult: realFaces.filter(e => e.detectedAgeGroup === 'youngAdult' && e.actualAgeGroup === 'youngAdult').length,
+      youngAdultAsMiddleAged: realFaces.filter(e => e.detectedAgeGroup === 'youngAdult' && e.actualAgeGroup === 'middleAged').length,
+      youngAdultAsSenior: realFaces.filter(e => e.detectedAgeGroup === 'youngAdult' && e.actualAgeGroup === 'senior').length,
+      middleAgedAsChild: realFaces.filter(e => e.detectedAgeGroup === 'middleAged' && e.actualAgeGroup === 'child').length,
+      middleAgedAsTeen: realFaces.filter(e => e.detectedAgeGroup === 'middleAged' && e.actualAgeGroup === 'teen').length,
+      middleAgedAsYoungAdult: realFaces.filter(e => e.detectedAgeGroup === 'middleAged' && e.actualAgeGroup === 'youngAdult').length,
+      middleAgedAsMiddleAged: realFaces.filter(e => e.detectedAgeGroup === 'middleAged' && e.actualAgeGroup === 'middleAged').length,
+      middleAgedAsSenior: realFaces.filter(e => e.detectedAgeGroup === 'middleAged' && e.actualAgeGroup === 'senior').length,
+      seniorAsChild: realFaces.filter(e => e.detectedAgeGroup === 'senior' && e.actualAgeGroup === 'child').length,
+      seniorAsTeen: realFaces.filter(e => e.detectedAgeGroup === 'senior' && e.actualAgeGroup === 'teen').length,
+      seniorAsYoungAdult: realFaces.filter(e => e.detectedAgeGroup === 'senior' && e.actualAgeGroup === 'youngAdult').length,
+      seniorAsMiddleAged: realFaces.filter(e => e.detectedAgeGroup === 'senior' && e.actualAgeGroup === 'middleAged').length,
+      seniorAsSenior: realFaces.filter(e => e.detectedAgeGroup === 'senior' && e.actualAgeGroup === 'senior').length,
     },
   };
 }

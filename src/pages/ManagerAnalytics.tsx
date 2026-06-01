@@ -42,9 +42,11 @@ const MANAGER_PASSWORD = 'smartads1234';
 const COLORS = {
   male: 'hsl(221, 83%, 53%)',
   female: 'hsl(330, 81%, 60%)',
-  kid: 'hsl(199, 89%, 48%)',
-  young: 'hsl(142, 71%, 45%)',
-  adult: 'hsl(38, 92%, 50%)',
+  child: 'hsl(199, 89%, 48%)',
+  teen: 'hsl(280, 67%, 55%)',
+  youngAdult: 'hsl(142, 71%, 45%)',
+  middleAged: 'hsl(38, 92%, 50%)',
+  senior: 'hsl(0, 72%, 51%)',
 };
 
 // ─── Login Gate ─────────────────────────────────────────────
@@ -178,9 +180,11 @@ const ManagerAnalytics = () => {
   ].filter(d => d.value > 0);
 
   const agePie = [
-    { name: 'Kid', value: totals.kidCount, color: COLORS.kid },
-    { name: 'Young', value: totals.youngCount, color: COLORS.young },
-    { name: 'Adult', value: totals.adultCount, color: COLORS.adult },
+    { name: 'Child', value: totals.childCount, color: COLORS.child },
+    { name: 'Teen', value: totals.teenCount, color: COLORS.teen },
+    { name: 'Young Adult', value: totals.youngAdultCount, color: COLORS.youngAdult },
+    { name: 'Middle Aged', value: totals.middleAgedCount, color: COLORS.middleAged },
+    { name: 'Senior', value: totals.seniorCount, color: COLORS.senior },
   ].filter(d => d.value > 0);
 
   const hasData = totals.totalSessions > 0;
@@ -405,9 +409,11 @@ const ManagerAnalytics = () => {
                             <TableHead>Viewers</TableHead>
                             <TableHead>Male</TableHead>
                             <TableHead>Female</TableHead>
-                            <TableHead>Kid</TableHead>
-                            <TableHead>Young</TableHead>
-                            <TableHead>Adult</TableHead>
+                            <TableHead>Child</TableHead>
+                            <TableHead>Teen</TableHead>
+                            <TableHead>Young Adult</TableHead>
+                            <TableHead>Mid-Age</TableHead>
+                            <TableHead>Senior</TableHead>
                             <TableHead>Ad Playing</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -421,9 +427,11 @@ const ManagerAnalytics = () => {
                                 <TableCell className="font-semibold">{s.totalViewers}</TableCell>
                                 <TableCell>{s.maleCount}</TableCell>
                                 <TableCell>{s.femaleCount}</TableCell>
-                                <TableCell>{s.kidCount}</TableCell>
-                                <TableCell>{s.youngCount}</TableCell>
-                                <TableCell>{s.adultCount}</TableCell>
+                                <TableCell>{s.childCount}</TableCell>
+                                <TableCell>{s.teenCount}</TableCell>
+                                <TableCell>{s.youngAdultCount}</TableCell>
+                                <TableCell>{s.middleAgedCount}</TableCell>
+                                <TableCell>{s.seniorCount}</TableCell>
                                 <TableCell className="text-xs max-w-[150px] truncate">{s.adTitle}</TableCell>
                               </TableRow>
                             );

@@ -120,7 +120,7 @@ export const AdManager = ({
       filename: `${newAd.title}.mp4`,
       title: newAd.title,
       gender: (newAd.gender as 'male' | 'female' | 'all') || 'all',
-      ageGroup: (newAd.ageGroup as 'kid' | 'young' | 'adult' | 'all') || 'all',
+      ageGroup: (newAd.ageGroup as 'child' | 'teen' | 'youngAdult' | 'middleAged' | 'senior' | 'all') || 'all',
       duration,
       captureStart,
       captureEnd,
@@ -213,9 +213,11 @@ export const AdManager = ({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Ages</SelectItem>
-                    <SelectItem value="kid">Kid (&lt;13)</SelectItem>
-                    <SelectItem value="young">Young (13-34)</SelectItem>
-                    <SelectItem value="adult">Adult (35+)</SelectItem>
+                    <SelectItem value="child">Child (&lt;13)</SelectItem>
+                    <SelectItem value="teen">Teen (13-17)</SelectItem>
+                    <SelectItem value="youngAdult">Young Adult (18-34)</SelectItem>
+                    <SelectItem value="middleAged">Middle Aged (35-54)</SelectItem>
+                    <SelectItem value="senior">Senior (55+)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -300,9 +302,11 @@ export const AdManager = ({
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="all">All</SelectItem>
-                            <SelectItem value="kid">Kid</SelectItem>
-                            <SelectItem value="young">Young</SelectItem>
-                            <SelectItem value="adult">Adult</SelectItem>
+                            <SelectItem value="child">Child</SelectItem>
+                            <SelectItem value="teen">Teen</SelectItem>
+                            <SelectItem value="youngAdult">Young Adult</SelectItem>
+                            <SelectItem value="middleAged">Mid-Age</SelectItem>
+                            <SelectItem value="senior">Senior</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -380,9 +384,11 @@ const TargetBadge = ({ type, value }: TargetBadgeProps) => {
            : value === 'female' ? <UserCircle2 className="h-3 w-3" />
            : null;
     }
-    return value === 'kid' ? <Smile className="h-3 w-3" />
-         : value === 'young' ? <Baby className="h-3 w-3" /> 
-         : value === 'adult' ? <Briefcase className="h-3 w-3" />
+    return value === 'child' ? <Smile className="h-3 w-3" />
+         : value === 'teen' ? <Baby className="h-3 w-3" />
+         : value === 'youngAdult' ? <Baby className="h-3 w-3" /> 
+         : value === 'middleAged' ? <Briefcase className="h-3 w-3" />
+         : value === 'senior' ? <Briefcase className="h-3 w-3" />
          : null;
   };
 
@@ -392,9 +398,11 @@ const TargetBadge = ({ type, value }: TargetBadgeProps) => {
            : value === 'female' ? 'bg-accent/20 text-accent'
            : 'bg-muted text-muted-foreground';
     }
-    return value === 'kid' ? 'bg-info/20 text-info'
-         : value === 'young' ? 'bg-success/20 text-success'
-         : value === 'adult' ? 'bg-warning/20 text-warning'
+    return value === 'child' ? 'bg-info/20 text-info'
+         : value === 'teen' ? 'bg-accent/20 text-accent'
+         : value === 'youngAdult' ? 'bg-success/20 text-success'
+         : value === 'middleAged' ? 'bg-warning/20 text-warning'
+         : value === 'senior' ? 'bg-destructive/20 text-destructive'
          : 'bg-muted text-muted-foreground';
   };
 

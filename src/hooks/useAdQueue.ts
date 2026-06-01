@@ -20,12 +20,14 @@ const applyCapture = (ads: AdMetadata[], startPercent: number, endPercent: numbe
 const getDominantAudience = (demographics: DemographicCounts) => {
   const dominantGender = demographics.male >= demographics.female ? 'male' : 'female';
 
-  let dominantAge: 'kid' | 'young' | 'adult' = 'young';
-  if (demographics.kid >= demographics.young && demographics.kid >= demographics.adult) {
-    dominantAge = 'kid';
-  } else if (demographics.adult > demographics.young && demographics.adult > demographics.kid) {
-    dominantAge = 'adult';
-  }
+  const ageGroups = [
+    { key: 'child' as const, count: demographics.child },
+    { key: 'teen' as const, count: demographics.teen },
+    { key: 'youngAdult' as const, count: demographics.youngAdult },
+    { key: 'middleAged' as const, count: demographics.middleAged },
+    { key: 'senior' as const, count: demographics.senior },
+  ];
+  const dominantAge = ageGroups.reduce((max, g) => g.count > max.count ? g : max, ageGroups[0]).key;
 
   return { dominantGender, dominantAge };
 };
@@ -41,6 +43,7 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
 
   const manualQueueIndexRef = useRef(0);
   const recentlyPlayedRef = useRef<string[]>([]);
+  const impressionCountsRef = useRef<Record<string, number>>({});
   const [queue, setQueue] = useState<AdMetadata[]>(() =>
     applyCapture(customAds && customAds.length > 0 ? customAds : sampleAds, captureStartPercent, captureEndPercent)
   );
@@ -88,7 +91,7 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
       score += 5;
       reasons.push(`✓ Gender: ${dominantGender}`);
     } else {
-      score += 2;
+      score += 3;
       reasons.push('✓ Gender: all');
     }
 
@@ -97,14 +100,22 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
       score += 5;
       reasons.push(`✓ Age: ${dominantAge}`);
     } else if (ad.ageGroup === 'all') {
-      score += 2;
+      score += 3;
       reasons.push('✓ Age: all');
     } else {
       score += 0;
       reasons.push(`~ Age mismatch (${ad.ageGroup})`);
     }
 
-    // Small penalty for recently played
+    // Impression weight penalty — gives less-played ads a natural advantage
+    const impressionCount = impressionCountsRef.current[ad.id] || 0;
+    const impressionPenalty = Math.log2(1 + impressionCount);
+    if (impressionPenalty > 0) {
+      score -= impressionPenalty;
+      reasons.push(`Impressions: ${impressionCount} (-${impressionPenalty.toFixed(2)})`);
+    }
+
+    // Small penalty for recently played (window of last 5)
     if (recentlyPlayedRef.current.includes(ad.id)) {
       const recencyIndex = recentlyPlayedRef.current.indexOf(ad.id);
       const penalty = 2 - recencyIndex;
@@ -137,7 +148,13 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
 
     // Step 3: Score within the filtered set (by age relevance)
     const scored = filtered.map(ad => scoreAd(ad, demographics));
-    scored.sort((a, b) => b.score - a.score);
+    // Primary sort by score; secondary sort by fewer impressions for fair rotation
+    scored.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      const aImpressions = impressionCountsRef.current[a.ad.id] || 0;
+      const bImpressions = impressionCountsRef.current[b.ad.id] || 0;
+      return aImpressions - bImpressions;
+    });
     const finalAds = scored.map(s => s.ad);
 
     console.log('[Queue] Strict filter for', dominantGender, dominantAge, '→', finalAds.map(a => a.title).join(', '));
@@ -187,13 +204,18 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
       nextAd = activeQueue[0];
     }
 
-    // Track in recently played (keep last 3)
-    recentlyPlayedRef.current = [nextAd.id, ...recent.filter(id => id !== nextAd!.id)].slice(0, 3);
+    // Track in recently played (dynamic window: scales with queue size, max 5)
+    const recencyWindow = Math.min(5, Math.floor(activeQueue.length * 0.6));
+    recentlyPlayedRef.current = [nextAd.id, ...recent.filter(id => id !== nextAd!.id)].slice(0, recencyWindow);
+
+    // Increment impression count for weighted round-robin
+    impressionCountsRef.current[nextAd.id] = (impressionCountsRef.current[nextAd.id] || 0) + 1;
+    const impressionCount = impressionCountsRef.current[nextAd.id];
 
     setPlayedAds(prev => [nextAd!.id, ...prev].slice(0, 5));
     selectionRef.current.lastPlayedId = nextAd.id;
 
-    addLog('ad', `▶️ Playing: "${nextAd.title}"`);
+    addLog('ad', `▶️ Playing: "${nextAd.title}" (impressions: ${impressionCount})`);
 
     return nextAd;
   }, [addLog, manualMode, externalManualQueue, captureStartPercent, captureEndPercent]);
@@ -206,9 +228,11 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
     total: queue.length,
     maleTargeted: queue.filter(a => a.gender === 'male').length,
     femaleTargeted: queue.filter(a => a.gender === 'female').length,
-    kidTargeted: queue.filter(a => a.ageGroup === 'kid').length,
-    youngTargeted: queue.filter(a => a.ageGroup === 'young').length,
-    adultTargeted: queue.filter(a => a.ageGroup === 'adult').length,
+    childTargeted: queue.filter(a => a.ageGroup === 'child').length,
+    teenTargeted: queue.filter(a => a.ageGroup === 'teen').length,
+    youngAdultTargeted: queue.filter(a => a.ageGroup === 'youngAdult').length,
+    middleAgedTargeted: queue.filter(a => a.ageGroup === 'middleAged').length,
+    seniorTargeted: queue.filter(a => a.ageGroup === 'senior').length,
   }), [queue]);
 
   return {

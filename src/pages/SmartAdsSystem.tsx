@@ -90,9 +90,11 @@ const SmartAdsSystem = () => {
   const [demographics, setDemographics] = useState<DemographicCounts>({
     male: 0,
     female: 0,
-    kid: 0,
-    young: 0,
-    adult: 0,
+    child: 0,
+    teen: 0,
+    youngAdult: 0,
+    middleAged: 0,
+    senior: 0,
   });
   const [currentViewers, setCurrentViewers] = useState<DetectionResult[]>([]);
   const [testMode, setTestMode] = useState(false);
@@ -127,7 +129,7 @@ const SmartAdsSystem = () => {
   const captureIntervalRef = useRef<number | null>(null);
   const isCapturingRef = useRef(false);
   const initializedRef = useRef(false);
-  const lastDemographicsRef = useRef<DemographicCounts>({ male: 0, female: 0, kid: 0, young: 0, adult: 0 });
+  const lastDemographicsRef = useRef<DemographicCounts>({ male: 0, female: 0, child: 0, teen: 0, youngAdult: 0, middleAged: 0, senior: 0 });
   const testModeTimeoutRef = useRef<number | null>(null);
   
   // Advanced face tracking with temporal stabilization
@@ -449,9 +451,11 @@ const SmartAdsSystem = () => {
                 trackingId: id,
                 genderVotes: { male: detection.gender === 'male' ? detection.confidence : 0, female: detection.gender === 'female' ? detection.confidence : 0 },
                 ageVotes: { 
-                  kid: detection.ageGroup === 'kid' ? detection.confidence : 0, 
-                  young: detection.ageGroup === 'young' ? detection.confidence : 0, 
-                  adult: detection.ageGroup === 'adult' ? detection.confidence : 0 
+                  child: detection.ageGroup === 'child' ? detection.confidence : 0, 
+                  teen: detection.ageGroup === 'teen' ? detection.confidence : 0, 
+                  youngAdult: detection.ageGroup === 'youngAdult' ? detection.confidence : 0, 
+                  middleAged: detection.ageGroup === 'middleAged' ? detection.confidence : 0, 
+                  senior: detection.ageGroup === 'senior' ? detection.confidence : 0 
                 },
                 seenFrames: 1,
                 bestFaceScore: detection.faceScore,
@@ -473,7 +477,7 @@ const SmartAdsSystem = () => {
         
         // Initialize with votes from first detection
         const initialGenderVotes = { male: 0, female: 0 };
-        const initialAgeVotes = { kid: 0, young: 0, adult: 0 };
+        const initialAgeVotes = { child: 0, teen: 0, youngAdult: 0, middleAged: 0, senior: 0 };
         
         if (detection.confidence >= MIN_VOTE_CONFIDENCE) {
           const voteWeight = detection.confidence * Math.min(detection.faceScore, 1);
@@ -543,9 +547,11 @@ const SmartAdsSystem = () => {
         const newDemographics: DemographicCounts = {
           male: confident.filter(d => d.gender === 'male').length,
           female: confident.filter(d => d.gender === 'female').length,
-          kid: confident.filter(d => d.ageGroup === 'kid').length,
-          young: confident.filter(d => d.ageGroup === 'young').length,
-          adult: confident.filter(d => d.ageGroup === 'adult').length,
+          child: confident.filter(d => d.ageGroup === 'child').length,
+          teen: confident.filter(d => d.ageGroup === 'teen').length,
+          youngAdult: confident.filter(d => d.ageGroup === 'youngAdult').length,
+          middleAged: confident.filter(d => d.ageGroup === 'middleAged').length,
+          senior: confident.filter(d => d.ageGroup === 'senior').length,
         };
         setDemographics(newDemographics);
         lastDemographicsRef.current = newDemographics;
@@ -553,7 +559,7 @@ const SmartAdsSystem = () => {
         addLog('detection', `👁️ ${stableViewers.length} viewer(s): ${stableViewers.map(r => `${r.gender}/${r.ageGroup} (${Math.round(r.faceScore * 100)}%)`).join(', ')}`);
       } else {
         // Clear demographics when no viewers
-        const zeroDemographics: DemographicCounts = { male: 0, female: 0, kid: 0, young: 0, adult: 0 };
+        const zeroDemographics: DemographicCounts = { male: 0, female: 0, child: 0, teen: 0, youngAdult: 0, middleAged: 0, senior: 0 };
         setDemographics(zeroDemographics);
         lastDemographicsRef.current = zeroDemographics;
       }
@@ -596,7 +602,7 @@ const SmartAdsSystem = () => {
     }
 
     // Reset demographics
-    setDemographics({ male: 0, female: 0, kid: 0, young: 0, adult: 0 });
+    setDemographics({ male: 0, female: 0, child: 0, teen: 0, youngAdult: 0, middleAged: 0, senior: 0 });
     setCurrentViewers([]);
 
     const success = await sourceStarter();
@@ -649,9 +655,11 @@ const SmartAdsSystem = () => {
         totalViewers: total,
         maleCount: lastDemographicsRef.current.male,
         femaleCount: lastDemographicsRef.current.female,
-        kidCount: lastDemographicsRef.current.kid,
-        youngCount: lastDemographicsRef.current.young,
-        adultCount: lastDemographicsRef.current.adult,
+        childCount: lastDemographicsRef.current.child,
+        teenCount: lastDemographicsRef.current.teen,
+        youngAdultCount: lastDemographicsRef.current.youngAdult,
+        middleAgedCount: lastDemographicsRef.current.middleAged,
+        seniorCount: lastDemographicsRef.current.senior,
         adId: currentAd?.id || '',
         adTitle: currentAd?.title || '',
       });
@@ -679,7 +687,7 @@ const SmartAdsSystem = () => {
         isCapturingRef.current = false;
         setIsCapturing(false);
       }
-      setDemographics({ male: 0, female: 0, kid: 0, young: 0, adult: 0 });
+      setDemographics({ male: 0, female: 0, child: 0, teen: 0, youngAdult: 0, middleAged: 0, senior: 0 });
       setCurrentViewers([]);
       resetManualQueueIndex();
       addLog('info', '📺 MANUAL MODE: Detection disabled - ads will play from playlist');
@@ -747,9 +755,11 @@ const SmartAdsSystem = () => {
           female: entry.actualGender === 'female' ? correctionWeight : 0 
         };
         tracked.ageVotes = { 
-          kid: entry.actualAgeGroup === 'kid' ? correctionWeight : 0, 
-          young: entry.actualAgeGroup === 'young' ? correctionWeight : 0, 
-          adult: entry.actualAgeGroup === 'adult' ? correctionWeight : 0 
+          child: entry.actualAgeGroup === 'child' ? correctionWeight : 0, 
+          teen: entry.actualAgeGroup === 'teen' ? correctionWeight : 0, 
+          youngAdult: entry.actualAgeGroup === 'youngAdult' ? correctionWeight : 0, 
+          middleAged: entry.actualAgeGroup === 'middleAged' ? correctionWeight : 0, 
+          senior: entry.actualAgeGroup === 'senior' ? correctionWeight : 0 
         };
         tracked.stableGender = entry.actualGender;
         tracked.stableAgeGroup = entry.actualAgeGroup;
