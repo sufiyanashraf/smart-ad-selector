@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 
 .planning/
+.env
+.env.*
+!.env.example
