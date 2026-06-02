@@ -1,4 +1,4 @@
-🚀 Project Title & Tagline
+🚀 Smart Advertising System - Display ads with the sense of audience
 ==========================
 ### Smart Ads System: AI-Powered Demographic-Targeted Advertising
 The Smart Ads System is a revolutionary advertising platform that utilizes AI to deliver demographic-targeted ads, maximizing the effectiveness of your marketing campaigns.
