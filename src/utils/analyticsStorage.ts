@@ -1,8 +1,3 @@
-/**
- * Analytics storage layer using localStorage.
- * Designed so that migrating to cloud later means swapping only this file.
- */
-
 import {
   AnalyticsEvent,
   AnalyticsSession,
@@ -10,6 +5,7 @@ import {
   DailyAnalyticsSummary,
   AllTimeTotals,
 } from '@/types/analytics';
+import { queueForSync } from '@/utils/syncQueue';
 
 const EVENTS_KEY = 'smartads-analytics-events';
 const SESSIONS_KEY = 'smartads-analytics-sessions';
@@ -59,6 +55,12 @@ export function recordAnalyticsSession(session: Omit<AnalyticsSession, 'id'>): s
   sessions.push(full);
   saveSessions(sessions);
 
+  // Queue for cloud sync (will be pushed to Supabase when online)
+  // Only push to Supabase if there was actually an audience detected (saves cloud storage)
+  if (full.totalViewers > 0) {
+    queueForSync(full);
+  }
+
   // Also record as an event for timeline granularity
   const event: AnalyticsEvent = {
     id: generateId(),
@@ -69,9 +71,11 @@ export function recordAnalyticsSession(session: Omit<AnalyticsSession, 'id'>): s
     totalViewers: session.totalViewers,
     maleCount: session.maleCount,
     femaleCount: session.femaleCount,
-    kidCount: session.kidCount,
-    youngCount: session.youngCount,
-    adultCount: session.adultCount,
+    childCount: session.childCount,
+    teenCount: session.teenCount,
+    youngAdultCount: session.youngAdultCount,
+    middleAgedCount: session.middleAgedCount,
+    seniorCount: session.seniorCount,
   };
   const events = getEvents();
   events.push(event);
@@ -108,9 +112,11 @@ export function getHourlyTimeline(date: Date): HourlyBucket[] {
     totalViewers: 0,
     maleCount: 0,
     femaleCount: 0,
-    kidCount: 0,
-    youngCount: 0,
-    adultCount: 0,
+    childCount: 0,
+    teenCount: 0,
+    youngAdultCount: 0,
+    middleAgedCount: 0,
+    seniorCount: 0,
     sessionCount: 0,
   }));
 
@@ -119,9 +125,11 @@ export function getHourlyTimeline(date: Date): HourlyBucket[] {
     buckets[h].totalViewers += s.totalViewers;
     buckets[h].maleCount += s.maleCount;
     buckets[h].femaleCount += s.femaleCount;
-    buckets[h].kidCount += s.kidCount;
-    buckets[h].youngCount += s.youngCount;
-    buckets[h].adultCount += s.adultCount;
+    buckets[h].childCount += s.childCount;
+    buckets[h].teenCount += s.teenCount;
+    buckets[h].youngAdultCount += s.youngAdultCount;
+    buckets[h].middleAgedCount += s.middleAgedCount;
+    buckets[h].seniorCount += s.seniorCount;
     buckets[h].sessionCount += 1;
   }
 
@@ -132,15 +140,17 @@ export function getDailySummary(date: Date): DailyAnalyticsSummary {
   const timeline = getHourlyTimeline(date);
   let peak = 0;
   let peakH = 0;
-  const totals = { v: 0, m: 0, f: 0, k: 0, y: 0, a: 0, sc: 0 };
+  const totals = { v: 0, m: 0, f: 0, c: 0, t: 0, ya: 0, ma: 0, s: 0, sc: 0 };
 
   for (const b of timeline) {
     totals.v += b.totalViewers;
     totals.m += b.maleCount;
     totals.f += b.femaleCount;
-    totals.k += b.kidCount;
-    totals.y += b.youngCount;
-    totals.a += b.adultCount;
+    totals.c += b.childCount;
+    totals.t += b.teenCount;
+    totals.ya += b.youngAdultCount;
+    totals.ma += b.middleAgedCount;
+    totals.s += b.seniorCount;
     totals.sc += b.sessionCount;
     if (b.totalViewers > peak) {
       peak = b.totalViewers;
@@ -155,9 +165,11 @@ export function getDailySummary(date: Date): DailyAnalyticsSummary {
     totalVisitors: totals.v,
     maleCount: totals.m,
     femaleCount: totals.f,
-    kidCount: totals.k,
-    youngCount: totals.y,
-    adultCount: totals.a,
+    childCount: totals.c,
+    teenCount: totals.t,
+    youngAdultCount: totals.ya,
+    middleAgedCount: totals.ma,
+    seniorCount: totals.s,
     peakHour: peakH,
     peakViewers: peak,
     sessionCount: totals.sc,
@@ -173,9 +185,11 @@ export function getAllTimeTotals(): AllTimeTotals {
       totalSessions: 0,
       maleCount: 0,
       femaleCount: 0,
-      kidCount: 0,
-      youngCount: 0,
-      adultCount: 0,
+      childCount: 0,
+      teenCount: 0,
+      youngAdultCount: 0,
+      middleAgedCount: 0,
+      seniorCount: 0,
       avgVisitorsPerDay: 0,
       peakHour: 0,
       peakHourLabel: '12:00 PM',
@@ -184,7 +198,7 @@ export function getAllTimeTotals(): AllTimeTotals {
     };
   }
 
-  const totals = { v: 0, m: 0, f: 0, k: 0, y: 0, a: 0 };
+  const totals = { v: 0, m: 0, f: 0, c: 0, t: 0, ya: 0, ma: 0, s: 0 };
   const hourCounts: number[] = new Array(24).fill(0);
   let minTs = Infinity;
   let maxTs = 0;
@@ -193,9 +207,11 @@ export function getAllTimeTotals(): AllTimeTotals {
     totals.v += s.totalViewers;
     totals.m += s.maleCount;
     totals.f += s.femaleCount;
-    totals.k += s.kidCount;
-    totals.y += s.youngCount;
-    totals.a += s.adultCount;
+    totals.c += s.childCount;
+    totals.t += s.teenCount;
+    totals.ya += s.youngAdultCount;
+    totals.ma += s.middleAgedCount;
+    totals.s += s.seniorCount;
     const h = new Date(s.endedAt).getHours();
     hourCounts[h] += s.totalViewers;
     if (s.startedAt < minTs) minTs = s.startedAt;
@@ -218,9 +234,11 @@ export function getAllTimeTotals(): AllTimeTotals {
     totalSessions: sessions.length,
     maleCount: totals.m,
     femaleCount: totals.f,
-    kidCount: totals.k,
-    youngCount: totals.y,
-    adultCount: totals.a,
+    childCount: totals.c,
+    teenCount: totals.t,
+    youngAdultCount: totals.ya,
+    middleAgedCount: totals.ma,
+    seniorCount: totals.s,
     avgVisitorsPerDay: Math.round((totals.v / daySpan) * 10) / 10,
     peakHour,
     peakHourLabel: formatHourLabel(peakHour),

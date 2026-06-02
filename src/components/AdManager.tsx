@@ -54,7 +54,7 @@ export const AdManager = ({
   const [newAd, setNewAd] = useState<Partial<AdMetadata>>({
     title: '',
     gender: 'all',
-    ageGroup: 'all',
+    ageGroup: ['all'],
     duration: 30,
     videoUrl: '',
   });
@@ -120,7 +120,7 @@ export const AdManager = ({
       filename: `${newAd.title}.mp4`,
       title: newAd.title,
       gender: (newAd.gender as 'male' | 'female' | 'all') || 'all',
-      ageGroup: (newAd.ageGroup as 'kid' | 'young' | 'adult' | 'all') || 'all',
+      ageGroup: (newAd.ageGroup as AdMetadata['ageGroup']) || ['all'],
       duration,
       captureStart,
       captureEnd,
@@ -134,7 +134,7 @@ export const AdManager = ({
     setNewAd({
       title: '',
       gender: 'all',
-      ageGroup: 'all',
+      ageGroup: ['all'],
       duration: 30,
       videoUrl: '',
     });
@@ -202,22 +202,32 @@ export const AdManager = ({
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5">
-                <label className="text-xs text-muted-foreground">Target Age</label>
-                <Select 
-                  value={newAd.ageGroup || 'all'} 
-                  onValueChange={(v) => setNewAd({ ...newAd, ageGroup: v as any })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Ages</SelectItem>
-                    <SelectItem value="kid">Kid (&lt;13)</SelectItem>
-                    <SelectItem value="young">Young (13-34)</SelectItem>
-                    <SelectItem value="adult">Adult (35+)</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="space-y-1.5 col-span-2">
+                <label className="text-xs text-muted-foreground">Target Age (Multiple allowed)</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {['all', 'child', 'teen', 'youngAdult', 'middleAged', 'senior'].map(age => {
+                    const isSelected = (newAd.ageGroup as string[])?.includes(age);
+                    return (
+                      <div 
+                        key={age}
+                        className={`cursor-pointer px-2 py-1 rounded-md text-xs font-medium border transition-colors ${isSelected ? 'bg-primary text-primary-foreground border-primary shadow-sm' : 'bg-background text-muted-foreground border-border hover:border-primary/50'}`}
+                        onClick={() => {
+                          let current = [...((newAd.ageGroup as string[]) || [])];
+                          if (age === 'all') current = ['all'];
+                          else {
+                            current = current.filter(a => a !== 'all');
+                            if (current.includes(age)) current = current.filter(a => a !== age);
+                            else current.push(age);
+                            if (current.length === 0) current = ['all'];
+                          }
+                          setNewAd({ ...newAd, ageGroup: current as any });
+                        }}
+                      >
+                        <span className="capitalize">{age === 'youngAdult' ? 'Young Adult' : age === 'middleAged' ? 'Mid-Age' : age}</span>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs text-muted-foreground flex items-center gap-1">
@@ -291,20 +301,30 @@ export const AdManager = ({
                             <SelectItem value="female">Female</SelectItem>
                           </SelectContent>
                         </Select>
-                        <Select 
-                          value={editingAd.ageGroup} 
-                          onValueChange={(v) => setEditingAd({ ...editingAd, ageGroup: v as any })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">All</SelectItem>
-                            <SelectItem value="kid">Kid</SelectItem>
-                            <SelectItem value="young">Young</SelectItem>
-                            <SelectItem value="adult">Adult</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <div className="col-span-2 flex flex-wrap gap-1 items-center border rounded-md p-1 bg-background">
+                          {['all', 'child', 'teen', 'youngAdult', 'middleAged', 'senior'].map(age => {
+                            const isSelected = editingAd.ageGroup.includes(age as any);
+                            return (
+                              <div 
+                                key={age}
+                                className={`cursor-pointer px-1.5 py-0.5 rounded text-[10px] font-medium border transition-colors ${isSelected ? 'bg-primary text-primary-foreground border-primary' : 'bg-transparent text-muted-foreground border-transparent hover:bg-muted'}`}
+                                onClick={() => {
+                                  let current = [...editingAd.ageGroup];
+                                  if (age === 'all') current = ['all'];
+                                  else {
+                                    current = current.filter(a => a !== 'all');
+                                    if (current.includes(age as any)) current = current.filter(a => a !== age);
+                                    else current.push(age as any);
+                                    if (current.length === 0) current = ['all'];
+                                  }
+                                  setEditingAd({ ...editingAd, ageGroup: current as any });
+                                }}
+                              >
+                                <span className="capitalize">{age === 'youngAdult' ? 'Young' : age === 'middleAged' ? 'Mid' : age}</span>
+                              </div>
+                            )
+                          })}
+                        </div>
                       </div>
                     ) : (
                       // View mode
@@ -312,7 +332,9 @@ export const AdManager = ({
                         <p className="font-medium truncate">{ad.title}</p>
                         <div className="flex items-center gap-2 mt-1">
                           <TargetBadge type="gender" value={ad.gender} />
-                          <TargetBadge type="age" value={ad.ageGroup} />
+                          {(Array.isArray(ad.ageGroup) ? ad.ageGroup : [ad.ageGroup]).map(age => (
+                            <TargetBadge key={age} type="age" value={age as string} />
+                          ))}
                           <span className="text-xs text-muted-foreground">
                             {ad.duration}s • Capture: {ad.captureStart}s-{ad.captureEnd}s
                           </span>
@@ -380,9 +402,11 @@ const TargetBadge = ({ type, value }: TargetBadgeProps) => {
            : value === 'female' ? <UserCircle2 className="h-3 w-3" />
            : null;
     }
-    return value === 'kid' ? <Smile className="h-3 w-3" />
-         : value === 'young' ? <Baby className="h-3 w-3" /> 
-         : value === 'adult' ? <Briefcase className="h-3 w-3" />
+    return value === 'child' ? <Smile className="h-3 w-3" />
+         : value === 'teen' ? <Baby className="h-3 w-3" />
+         : value === 'youngAdult' ? <Baby className="h-3 w-3" /> 
+         : value === 'middleAged' ? <Briefcase className="h-3 w-3" />
+         : value === 'senior' ? <Briefcase className="h-3 w-3" />
          : null;
   };
 
@@ -392,9 +416,11 @@ const TargetBadge = ({ type, value }: TargetBadgeProps) => {
            : value === 'female' ? 'bg-accent/20 text-accent'
            : 'bg-muted text-muted-foreground';
     }
-    return value === 'kid' ? 'bg-info/20 text-info'
-         : value === 'young' ? 'bg-success/20 text-success'
-         : value === 'adult' ? 'bg-warning/20 text-warning'
+    return value === 'child' ? 'bg-info/20 text-info'
+         : value === 'teen' ? 'bg-accent/20 text-accent'
+         : value === 'youngAdult' ? 'bg-success/20 text-success'
+         : value === 'middleAged' ? 'bg-warning/20 text-warning'
+         : value === 'senior' ? 'bg-destructive/20 text-destructive'
          : 'bg-muted text-muted-foreground';
   };
 

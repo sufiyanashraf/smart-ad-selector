@@ -75,9 +75,11 @@ export const ManualQueueEditor = ({
   };
 
   const getAgeIcon = (age: string) => {
-    if (age === 'kid') return <Smile className="h-3 w-3" />;
-    if (age === 'young') return <Baby className="h-3 w-3" />;
-    if (age === 'adult') return <Briefcase className="h-3 w-3" />;
+    if (age === 'child') return <Smile className="h-3 w-3" />;
+    if (age === 'teen') return <Baby className="h-3 w-3" />;
+    if (age === 'youngAdult') return <Baby className="h-3 w-3" />;
+    if (age === 'middleAged') return <Briefcase className="h-3 w-3" />;
+    if (age === 'senior') return <Briefcase className="h-3 w-3" />;
     return null;
   };
 
@@ -165,9 +167,11 @@ export const ManualQueueEditor = ({
                   </span>
                   <span className={cn(
                     "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs",
-                    ad.ageGroup === 'kid' ? 'bg-info/20 text-info' :
-                    ad.ageGroup === 'young' ? 'bg-success/20 text-success' :
-                    ad.ageGroup === 'adult' ? 'bg-warning/20 text-warning' :
+                    ad.ageGroup === 'child' ? 'bg-info/20 text-info' :
+                    ad.ageGroup === 'teen' ? 'bg-accent/20 text-accent' :
+                    ad.ageGroup === 'youngAdult' ? 'bg-success/20 text-success' :
+                    ad.ageGroup === 'middleAged' ? 'bg-warning/20 text-warning' :
+                    ad.ageGroup === 'senior' ? 'bg-destructive/20 text-destructive' :
                     'bg-muted text-muted-foreground'
                   )}>
                     {getAgeIcon(ad.ageGroup)}

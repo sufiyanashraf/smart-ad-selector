@@ -9,9 +9,11 @@ import { PreprocessingOptions, ROIConfig } from '@/utils/imagePreprocessing';
 export interface DemographicVotes {
   male: number;
   female: number;
-  kid: number;
-  young: number;
-  adult: number;
+  child: number;
+  teen: number;
+  youngAdult: number;
+  middleAged: number;
+  senior: number;
 }
 
 export interface TrackedFace {
@@ -21,7 +23,7 @@ export interface TrackedFace {
   confidence: number;
   faceScore: number;
   gender: 'male' | 'female';
-  ageGroup: 'kid' | 'young' | 'adult';
+  ageGroup: 'child' | 'teen' | 'youngAdult' | 'middleAged' | 'senior';
   consecutiveHits: number;
   missedFrames: number;
   firstSeenAt: number;
@@ -29,9 +31,9 @@ export interface TrackedFace {
   detectorUsed: 'tiny' | 'ssd';
   // Temporal stabilization votes
   genderVotes: { male: number; female: number };
-  ageVotes: { kid: number; young: number; adult: number };
+  ageVotes: { child: number; teen: number; youngAdult: number; middleAged: number; senior: number };
   stableGender: 'male' | 'female';
-  stableAgeGroup: 'kid' | 'young' | 'adult';
+  stableAgeGroup: 'child' | 'teen' | 'youngAdult' | 'middleAged' | 'senior';
   // User correction flag - when true, ignore AI updates
   isUserCorrected?: boolean;
 }
@@ -148,12 +150,12 @@ export const DEFAULT_HYBRID_CONFIG: HybridDetectionConfig = {
 export interface ViewerAggregate {
   trackingId: string;
   genderVotes: { male: number; female: number };
-  ageVotes: { kid: number; young: number; adult: number };
+  ageVotes: { child: number; teen: number; youngAdult: number; middleAged: number; senior: number };
   seenFrames: number;
   bestFaceScore: number;
   bestConfidence: number;
   finalGender: 'male' | 'female';
-  finalAgeGroup: 'kid' | 'young' | 'adult';
+  finalAgeGroup: 'child' | 'teen' | 'youngAdult' | 'middleAged' | 'senior';
 }
 
 export interface CaptureSessionSummary {
@@ -164,9 +166,11 @@ export interface CaptureSessionSummary {
   demographics: {
     male: number;
     female: number;
-    kid: number;
-    young: number;
-    adult: number;
+    child: number;
+    teen: number;
+    youngAdult: number;
+    middleAged: number;
+    senior: number;
   };
   viewers: ViewerAggregate[];
 }
@@ -205,11 +209,11 @@ export function getStableGender(
 }
 
 export function getStableAgeGroup(
-  votes: { kid: number; young: number; adult: number },
-  previous: 'kid' | 'young' | 'adult' = 'young',
+  votes: { child: number; teen: number; youngAdult: number; middleAged: number; senior: number },
+  previous: 'child' | 'teen' | 'youngAdult' | 'middleAged' | 'senior' = 'youngAdult',
   opts: { minTotal?: number; minMargin?: number } = {}
-): 'kid' | 'young' | 'adult' {
-  const total = votes.kid + votes.young + votes.adult;
+): 'child' | 'teen' | 'youngAdult' | 'middleAged' | 'senior' {
+  const total = votes.child + votes.teen + votes.youngAdult + votes.middleAged + votes.senior;
   const minTotal = opts.minTotal ?? 0.9;
   const minMargin = opts.minMargin ?? 0.25;
 
@@ -217,9 +221,11 @@ export function getStableAgeGroup(
 
   // winner-take-most with margin; otherwise keep previous
   const entries = [
-    { k: 'kid' as const, v: votes.kid },
-    { k: 'young' as const, v: votes.young },
-    { k: 'adult' as const, v: votes.adult },
+    { k: 'child' as const, v: votes.child },
+    { k: 'teen' as const, v: votes.teen },
+    { k: 'youngAdult' as const, v: votes.youngAdult },
+    { k: 'middleAged' as const, v: votes.middleAged },
+    { k: 'senior' as const, v: votes.senior },
   ].sort((a, b) => b.v - a.v);
 
   if (entries[0].v - entries[1].v < minMargin) return previous;

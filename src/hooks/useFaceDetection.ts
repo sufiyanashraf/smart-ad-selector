@@ -443,15 +443,19 @@ export const useFaceDetection = (
           height: Math.min(box.height / scaleBack, videoHeight - box.y / scaleBack),
         };
 
-        // Classify age: kid (<13), young (13-34), adult (35+)
+        // Classify age: child (<13), teen (13-19), youngAdult (20-34), middleAged (35-54), senior (55+)
         const age = Math.round(detection.age);
-        let ageGroup: 'kid' | 'young' | 'adult';
+        let ageGroup: 'child' | 'teen' | 'youngAdult' | 'middleAged' | 'senior';
         if (age < 13) {
-          ageGroup = 'kid';
+          ageGroup = 'child';
+        } else if (age < 20) {
+          ageGroup = 'teen';
         } else if (age < 35) {
-          ageGroup = 'young';
+          ageGroup = 'youngAdult';
+        } else if (age < 55) {
+          ageGroup = 'middleAged';
         } else {
-          ageGroup = 'adult';
+          ageGroup = 'senior';
         }
 
         // Get raw gender prediction

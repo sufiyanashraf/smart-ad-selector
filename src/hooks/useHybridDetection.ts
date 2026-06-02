@@ -134,7 +134,7 @@ export const useHybridDetection = (
   // Classify a single face crop using face-api.js
   const classifyFace = useCallback(async (
     faceCanvas: HTMLCanvasElement
-  ): Promise<{ gender: 'male' | 'female'; ageGroup: 'kid' | 'young' | 'adult'; confidence: number } | null> => {
+  ): Promise<{ gender: 'male' | 'female'; ageGroup: 'child' | 'teen' | 'youngAdult' | 'middleAged' | 'senior'; confidence: number } | null> => {
     try {
       // Run age/gender detection on the face crop
       const detection = await faceapi
@@ -146,10 +146,12 @@ export const useHybridDetection = (
       
       if (detection) {
         const age = Math.round(detection.age);
-        let ageGroup: 'kid' | 'young' | 'adult';
-        if (age < 13) ageGroup = 'kid';
-        else if (age < 35) ageGroup = 'young';
-        else ageGroup = 'adult';
+        let ageGroup: 'child' | 'teen' | 'youngAdult' | 'middleAged' | 'senior';
+        if (age < 13) ageGroup = 'child';
+        else if (age < 20) ageGroup = 'teen';
+        else if (age < 35) ageGroup = 'youngAdult';
+        else if (age < 55) ageGroup = 'middleAged';
+        else ageGroup = 'senior';
         
         return {
           gender: detection.gender as 'male' | 'female',
@@ -167,10 +169,12 @@ export const useHybridDetection = (
       
       if (ssdDetection) {
         const age = Math.round(ssdDetection.age);
-        let ageGroup: 'kid' | 'young' | 'adult';
-        if (age < 13) ageGroup = 'kid';
-        else if (age < 35) ageGroup = 'young';
-        else ageGroup = 'adult';
+        let ageGroup: 'child' | 'teen' | 'youngAdult' | 'middleAged' | 'senior';
+        if (age < 13) ageGroup = 'child';
+        else if (age < 20) ageGroup = 'teen';
+        else if (age < 35) ageGroup = 'youngAdult';
+        else if (age < 55) ageGroup = 'middleAged';
+        else ageGroup = 'senior';
         
         return {
           gender: ssdDetection.gender as 'male' | 'female',
@@ -233,10 +237,12 @@ export const useHybridDetection = (
       return detections.map(det => {
         const box = det.detection.box;
         const age = Math.round(det.age);
-        let ageGroup: 'kid' | 'young' | 'adult';
-        if (age < 13) ageGroup = 'kid';
-        else if (age < 35) ageGroup = 'young';
-        else ageGroup = 'adult';
+        let ageGroup: 'child' | 'teen' | 'youngAdult' | 'middleAged' | 'senior';
+        if (age < 13) ageGroup = 'child';
+        else if (age < 20) ageGroup = 'teen';
+        else if (age < 35) ageGroup = 'youngAdult';
+        else if (age < 55) ageGroup = 'middleAged';
+        else ageGroup = 'senior';
         
         return {
           gender: det.gender as 'male' | 'female',
@@ -340,7 +346,7 @@ export const useHybridDetection = (
             // Use YOLO detection without classification
             hybridResults.push({
               gender: 'male', // Default - will be updated by tracking
-              ageGroup: 'adult',
+              ageGroup: 'middleAged',
               confidence: 0.5,
               faceScore: detection.confidence,
               boundingBox: {
@@ -359,7 +365,7 @@ export const useHybridDetection = (
           
           hybridResults.push({
             gender: classification?.gender ?? 'male',
-            ageGroup: classification?.ageGroup ?? 'adult',
+            ageGroup: classification?.ageGroup ?? 'middleAged',
             confidence: classification?.confidence ?? 0.5,
             faceScore: detection.confidence,
             boundingBox: {

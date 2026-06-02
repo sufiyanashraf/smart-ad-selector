@@ -14,12 +14,14 @@ export const DemographicStats = ({
   isCapturing,
 }: DemographicStatsProps) => {
   const totalGender = demographics.male + demographics.female;
-  const totalAge = demographics.kid + demographics.young + demographics.adult;
+  const totalAge = demographics.child + demographics.teen + demographics.youngAdult + demographics.middleAged + demographics.senior;
 
   const malePercent = totalGender > 0 ? (demographics.male / totalGender) * 100 : 50;
-  const kidPercent = totalAge > 0 ? (demographics.kid / totalAge) * 100 : 33;
-  const youngPercent = totalAge > 0 ? (demographics.young / totalAge) * 100 : 33;
-  const adultPercent = totalAge > 0 ? (demographics.adult / totalAge) * 100 : 34;
+  const childPercent = totalAge > 0 ? (demographics.child / totalAge) * 100 : 20;
+  const teenPercent = totalAge > 0 ? (demographics.teen / totalAge) * 100 : 20;
+  const youngAdultPercent = totalAge > 0 ? (demographics.youngAdult / totalAge) * 100 : 20;
+  const middleAgedPercent = totalAge > 0 ? (demographics.middleAged / totalAge) * 100 : 20;
+  const seniorPercent = totalAge > 0 ? (demographics.senior / totalAge) * 100 : 20;
 
   // Get average confidence
   const avgConfidence = recentDetections.length > 0 
@@ -91,51 +93,77 @@ export const DemographicStats = ({
           </span>
         </div>
         
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-5 gap-2">
           <StatCard
             icon={<Smile className="h-5 w-5" />}
-            label="Kid"
-            sublabel="< 13 years"
-            value={demographics.kid}
+            label="Child"
+            sublabel="< 13 yrs"
+            value={demographics.child}
             color="info"
-            isActive={demographics.kid >= demographics.young && demographics.kid >= demographics.adult && totalAge > 0}
+            isActive={demographics.child > 0 && demographics.child >= demographics.teen && demographics.child >= demographics.youngAdult && demographics.child >= demographics.middleAged && demographics.child >= demographics.senior}
+          />
+          <StatCard
+            icon={<Baby className="h-5 w-5" />}
+            label="Teen"
+            sublabel="13-17 yrs"
+            value={demographics.teen}
+            color="accent"
+            isActive={demographics.teen > 0 && demographics.teen >= demographics.child && demographics.teen >= demographics.youngAdult && demographics.teen >= demographics.middleAged && demographics.teen >= demographics.senior}
           />
           <StatCard
             icon={<Baby className="h-5 w-5" />}
             label="Young"
-            sublabel="13-34 years"
-            value={demographics.young}
+            sublabel="18-34 yrs"
+            value={demographics.youngAdult}
             color="success"
-            isActive={demographics.young > demographics.kid && demographics.young >= demographics.adult && totalAge > 0}
+            isActive={demographics.youngAdult > 0 && demographics.youngAdult >= demographics.child && demographics.youngAdult >= demographics.teen && demographics.youngAdult >= demographics.middleAged && demographics.youngAdult >= demographics.senior}
           />
           <StatCard
             icon={<Briefcase className="h-5 w-5" />}
-            label="Adult"
-            sublabel="35+ years"
-            value={demographics.adult}
+            label="Mid-Age"
+            sublabel="35-54 yrs"
+            value={demographics.middleAged}
             color="warning"
-            isActive={demographics.adult > demographics.kid && demographics.adult > demographics.young}
+            isActive={demographics.middleAged > 0 && demographics.middleAged >= demographics.child && demographics.middleAged >= demographics.teen && demographics.middleAged >= demographics.youngAdult && demographics.middleAged >= demographics.senior}
+          />
+          <StatCard
+            icon={<Briefcase className="h-5 w-5" />}
+            label="Senior"
+            sublabel="55+ yrs"
+            value={demographics.senior}
+            color="warning"
+            isActive={demographics.senior > 0 && demographics.senior >= demographics.child && demographics.senior >= demographics.teen && demographics.senior >= demographics.youngAdult && demographics.senior >= demographics.middleAged}
           />
         </div>
 
         <div className="h-2 bg-muted rounded-full overflow-hidden flex">
           <div 
             className="h-full bg-info transition-all duration-500"
-            style={{ width: `${kidPercent}%` }}
+            style={{ width: `${childPercent}%` }}
+          />
+          <div 
+            className="h-full bg-accent transition-all duration-500"
+            style={{ width: `${teenPercent}%` }}
           />
           <div 
             className="h-full bg-success transition-all duration-500"
-            style={{ width: `${youngPercent}%` }}
+            style={{ width: `${youngAdultPercent}%` }}
           />
           <div 
             className="h-full bg-warning transition-all duration-500"
-            style={{ width: `${adultPercent}%` }}
+            style={{ width: `${middleAgedPercent}%` }}
+          />
+          <div 
+            className="h-full bg-destructive transition-all duration-500"
+            style={{ width: `${seniorPercent}%` }}
           />
         </div>
         <div className="flex justify-between text-xs text-muted-foreground">
-          <span>{kidPercent.toFixed(0)}% Kid</span>
-          <span>{youngPercent.toFixed(0)}% Young</span>
-          <span>{adultPercent.toFixed(0)}% Adult</span>
+          <span>{childPercent.toFixed(0)}% Child</span>
+          <span>{teenPercent.toFixed(0)}% Teen</span>
+          <span>{youngAdultPercent.toFixed(0)}% Young</span>
+          <span>{middleAgedPercent.toFixed(0)}% Mid</span>
+          <span>{seniorPercent.toFixed(0)}% Senior</span>
         </div>
       </div>
 
@@ -212,9 +240,11 @@ const DetectionBadge = ({ detection, index }: DetectionBadgeProps) => {
   
   const getAgeGroupColor = () => {
     switch (detection.ageGroup) {
-      case 'kid': return 'text-info';
-      case 'young': return 'text-success';
-      case 'adult': return 'text-warning';
+      case 'child': return 'text-info';
+      case 'teen': return 'text-accent';
+      case 'youngAdult': return 'text-success';
+      case 'middleAged': return 'text-warning';
+      case 'senior': return 'text-destructive';
     }
   };
 

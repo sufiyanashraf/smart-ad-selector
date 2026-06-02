@@ -11,9 +11,11 @@ export interface AnalyticsEvent {
   totalViewers: number;
   maleCount: number;
   femaleCount: number;
-  kidCount: number;
-  youngCount: number;
-  adultCount: number;
+  childCount: number;
+  teenCount: number;
+  youngAdultCount: number;
+  middleAgedCount: number;
+  seniorCount: number;
 }
 
 export interface AnalyticsSession {
@@ -24,9 +26,11 @@ export interface AnalyticsSession {
   totalViewers: number;
   maleCount: number;
   femaleCount: number;
-  kidCount: number;
-  youngCount: number;
-  adultCount: number;
+  childCount: number;
+  teenCount: number;
+  youngAdultCount: number;
+  middleAgedCount: number;
+  seniorCount: number;
   adId: string;
   adTitle: string;
 }
@@ -37,9 +41,11 @@ export interface HourlyBucket {
   totalViewers: number;
   maleCount: number;
   femaleCount: number;
-  kidCount: number;
-  youngCount: number;
-  adultCount: number;
+  childCount: number;
+  teenCount: number;
+  youngAdultCount: number;
+  middleAgedCount: number;
+  seniorCount: number;
   sessionCount: number;
 }
 
@@ -48,9 +54,11 @@ export interface DailyAnalyticsSummary {
   totalVisitors: number;
   maleCount: number;
   femaleCount: number;
-  kidCount: number;
-  youngCount: number;
-  adultCount: number;
+  childCount: number;
+  teenCount: number;
+  youngAdultCount: number;
+  middleAgedCount: number;
+  seniorCount: number;
   peakHour: number;
   peakViewers: number;
   sessionCount: number;
@@ -61,9 +69,11 @@ export interface AllTimeTotals {
   totalSessions: number;
   maleCount: number;
   femaleCount: number;
-  kidCount: number;
-  youngCount: number;
-  adultCount: number;
+  childCount: number;
+  teenCount: number;
+  youngAdultCount: number;
+  middleAgedCount: number;
+  seniorCount: number;
   avgVisitorsPerDay: number;
   peakHour: number;
   peakHourLabel: string;

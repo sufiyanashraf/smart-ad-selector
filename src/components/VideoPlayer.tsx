@@ -255,7 +255,7 @@ export const VideoPlayer = ({
             {ad.title}
           </p>
           <p className="text-xs text-muted-foreground">
-            Target: {ad.gender === 'all' ? 'Everyone' : ad.gender} • {ad.ageGroup === 'all' ? 'All ages' : ad.ageGroup}
+            Target: {ad.gender === 'all' ? 'Everyone' : ad.gender} • {(Array.isArray(ad.ageGroup) ? ad.ageGroup : [ad.ageGroup]).includes('all') ? 'All ages' : (Array.isArray(ad.ageGroup) ? ad.ageGroup : [ad.ageGroup]).join(', ')}
           </p>
         </div>
       )}

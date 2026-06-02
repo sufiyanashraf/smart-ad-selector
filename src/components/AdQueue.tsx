@@ -94,8 +94,11 @@ const TargetBadge = ({ type, value }: TargetBadgeProps) => {
            : value === 'female' ? <UserCircle2 className="h-3 w-3" />
            : null;
     }
-    return value === 'young' ? <Baby className="h-3 w-3" /> 
-         : value === 'adult' ? <Briefcase className="h-3 w-3" />
+    return value === 'child' ? <Baby className="h-3 w-3" />
+         : value === 'teen' ? <Baby className="h-3 w-3" />
+         : value === 'youngAdult' ? <Baby className="h-3 w-3" /> 
+         : value === 'middleAged' ? <Briefcase className="h-3 w-3" />
+         : value === 'senior' ? <Briefcase className="h-3 w-3" />
          : null;
   };
 
@@ -105,8 +108,11 @@ const TargetBadge = ({ type, value }: TargetBadgeProps) => {
            : value === 'female' ? 'bg-accent/20 text-accent'
            : 'bg-muted text-muted-foreground';
     }
-    return value === 'young' ? 'bg-success/20 text-success'
-         : value === 'adult' ? 'bg-warning/20 text-warning'
+    return value === 'child' ? 'bg-info/20 text-info'
+         : value === 'teen' ? 'bg-accent/20 text-accent'
+         : value === 'youngAdult' ? 'bg-success/20 text-success'
+         : value === 'middleAged' ? 'bg-warning/20 text-warning'
+         : value === 'senior' ? 'bg-destructive/20 text-destructive'
          : 'bg-muted text-muted-foreground';
   };
 
