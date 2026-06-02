@@ -104,7 +104,7 @@ export function useSupabaseSync() {
       filename: row.filename as string,
       title: row.title as string,
       gender: (row.target_gender as string) as 'male' | 'female' | 'all',
-      ageGroup: (row.target_age_group as string) as AdMetadata['ageGroup'],
+      ageGroup: (row.target_age_group as string).split(',').map(s => s.trim()) as AdMetadata['ageGroup'],
       duration: row.duration as number,
       captureStart: Math.floor((row.duration as number) * 0.6),
       captureEnd: Math.floor((row.duration as number) * 0.95),

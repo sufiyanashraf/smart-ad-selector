@@ -96,15 +96,16 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
     }
 
     // Age match scoring
-    if (ad.ageGroup === dominantAge) {
+    const adAgeGroups = Array.isArray(ad.ageGroup) ? ad.ageGroup : [ad.ageGroup];
+    if (adAgeGroups.includes(dominantAge as any)) {
       score += 5;
       reasons.push(`✓ Age: ${dominantAge}`);
-    } else if (ad.ageGroup === 'all') {
+    } else if (adAgeGroups.includes('all')) {
       score += 3;
       reasons.push('✓ Age: all');
     } else {
       score += 0;
-      reasons.push(`~ Age mismatch (${ad.ageGroup})`);
+      reasons.push(`~ Age mismatch (${adAgeGroups.join(', ')})`);
     }
 
     // Impression weight penalty — gives less-played ads a natural advantage

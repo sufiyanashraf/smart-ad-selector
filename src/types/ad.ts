@@ -3,7 +3,7 @@ export interface AdMetadata {
   filename: string;
   title: string;
   gender: 'male' | 'female' | 'all';
-  ageGroup: 'child' | 'teen' | 'youngAdult' | 'middleAged' | 'senior' | 'all';
+  ageGroup: ('child' | 'teen' | 'youngAdult' | 'middleAged' | 'senior' | 'all')[];
   duration: number;
   captureStart: number;
   captureEnd: number;

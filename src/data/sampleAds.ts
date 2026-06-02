@@ -8,7 +8,7 @@ export const sampleAds: AdMetadata[] = [
     filename: 'tech-gadgets.mp4',
     title: 'TechPro Gadgets',
     gender: 'male',
-    ageGroup: 'youngAdult',
+    ageGroup: ['youngAdult'],
     duration: 10,
     captureStart: 6,
     captureEnd: 9,
@@ -19,7 +19,7 @@ export const sampleAds: AdMetadata[] = [
     filename: 'luxury-fashion.mp4',
     title: 'Elegance Fashion',
     gender: 'female',
-    ageGroup: 'middleAged',
+    ageGroup: ['middleAged'],
     duration: 6,
     captureStart: 3,
     captureEnd: 5,
@@ -30,7 +30,7 @@ export const sampleAds: AdMetadata[] = [
     filename: 'sports-energy.mp4',
     title: 'PowerBoost Energy',
     gender: 'male',
-    ageGroup: 'youngAdult',
+    ageGroup: ['youngAdult'],
     duration: 52,
     captureStart: 30,
     captureEnd: 48,
@@ -41,7 +41,7 @@ export const sampleAds: AdMetadata[] = [
     filename: 'skincare-premium.mp4',
     title: 'GlowUp Skincare',
     gender: 'female',
-    ageGroup: 'youngAdult',
+    ageGroup: ['youngAdult'],
     duration: 33,
     captureStart: 20,
     captureEnd: 30,
@@ -52,7 +52,7 @@ export const sampleAds: AdMetadata[] = [
     filename: 'financial-services.mp4',
     title: 'WealthGuard Insurance',
     gender: 'all',
-    ageGroup: 'middleAged',
+    ageGroup: ['middleAged'],
     duration: 60,
     captureStart: 36,
     captureEnd: 55,
@@ -63,7 +63,7 @@ export const sampleAds: AdMetadata[] = [
     filename: 'gaming-console.mp4',
     title: 'NexGen Gaming',
     gender: 'all',
-    ageGroup: 'youngAdult',
+    ageGroup: ['youngAdult'],
     duration: 10,
     captureStart: 6,
     captureEnd: 9,
@@ -74,7 +74,7 @@ export const sampleAds: AdMetadata[] = [
     filename: 'teen-fashion.mp4',
     title: 'TrendZ Teen Fashion',
     gender: 'all',
-    ageGroup: 'teen',
+    ageGroup: ['teen'],
     duration: 15,
     captureStart: 10,
     captureEnd: 13,
@@ -85,11 +85,22 @@ export const sampleAds: AdMetadata[] = [
     filename: 'health-wellness.mp4',
     title: 'VitalCare Health',
     gender: 'all',
-    ageGroup: 'senior',
+    ageGroup: ['senior'],
     duration: 20,
     captureStart: 14,
     captureEnd: 18,
     videoUrl: 'https://www.w3schools.com/html/movie.mp4',
+  },
+  {
+    id: 'ad-009',
+    filename: 'family-toys.mp4',
+    title: 'WonderPlay Toys',
+    gender: 'all',
+    ageGroup: ['child', 'middleAged'],
+    duration: 12,
+    captureStart: 8,
+    captureEnd: 11,
+    videoUrl: 'https://media.w3.org/2010/05/bunny/movie.mp4',
   },
 ];
 
@@ -106,7 +117,7 @@ export const getAdById = (id: string): AdMetadata | undefined => {
 export const getAdsByTarget = (gender?: string, ageGroup?: string): AdMetadata[] => {
   return sampleAds.filter(ad => {
     const genderMatch = !gender || ad.gender === 'all' || ad.gender === gender;
-    const ageMatch = !ageGroup || ad.ageGroup === 'all' || ad.ageGroup === ageGroup;
+    const ageMatch = !ageGroup || ad.ageGroup.includes('all') || ad.ageGroup.includes(ageGroup as any);
     return genderMatch && ageMatch;
   });
 };
