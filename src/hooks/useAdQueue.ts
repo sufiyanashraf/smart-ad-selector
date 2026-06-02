@@ -108,8 +108,9 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
     }
 
     // Impression weight penalty — gives less-played ads a natural advantage
+    // Capped at 2.5 so it NEVER overrides the +5 age match bonus (prevents playing wrong demographics)
     const impressionCount = impressionCountsRef.current[ad.id] || 0;
-    const impressionPenalty = Math.log2(1 + impressionCount);
+    const impressionPenalty = Math.min(2.5, Math.log2(1 + impressionCount) * 0.5);
     if (impressionPenalty > 0) {
       score -= impressionPenalty;
       reasons.push(`Impressions: ${impressionCount} (-${impressionPenalty.toFixed(2)})`);

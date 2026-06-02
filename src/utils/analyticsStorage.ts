@@ -1,8 +1,3 @@
-/**
- * Analytics storage layer using localStorage.
- * Designed so that migrating to cloud later means swapping only this file.
- */
-
 import {
   AnalyticsEvent,
   AnalyticsSession,
@@ -10,6 +5,7 @@ import {
   DailyAnalyticsSummary,
   AllTimeTotals,
 } from '@/types/analytics';
+import { queueForSync } from '@/utils/syncQueue';
 
 const EVENTS_KEY = 'smartads-analytics-events';
 const SESSIONS_KEY = 'smartads-analytics-sessions';
@@ -58,6 +54,12 @@ export function recordAnalyticsSession(session: Omit<AnalyticsSession, 'id'>): s
   const sessions = getSessions();
   sessions.push(full);
   saveSessions(sessions);
+
+  // Queue for cloud sync (will be pushed to Supabase when online)
+  // Only push to Supabase if there was actually an audience detected (saves cloud storage)
+  if (full.totalViewers > 0) {
+    queueForSync(full);
+  }
 
   // Also record as an event for timeline granularity
   const event: AnalyticsEvent = {

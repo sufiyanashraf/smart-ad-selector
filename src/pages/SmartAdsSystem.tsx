@@ -16,6 +16,7 @@ import { CaptureSessionSummary as CaptureSessionSummaryComponent } from '@/compo
 import { useWebcam } from '@/hooks/useWebcam';
 import { useFaceDetection, resetSimulatedPerson } from '@/hooks/useFaceDetection';
 import { useAdQueue } from '@/hooks/useAdQueue';
+import { useSupabaseSync } from '@/hooks/useSupabaseSync';
 import { sampleAds } from '@/data/sampleAds';
 import { recordAnalyticsSession } from '@/utils/analyticsStorage';
 import { Tv, Zap, Activity, AlertCircle, CheckCircle, Eye, EyeOff, Play, Square, Cpu, Home, Tag, BarChart3 } from 'lucide-react';
@@ -117,6 +118,7 @@ const SmartAdsSystem = () => {
 
   // Auto-pause state
   const [isAutoPaused, setIsAutoPaused] = useState(false);
+  const isAutoPausedRef = useRef(false);
   const [nextCheckIn, setNextCheckIn] = useState<number | null>(null);
   const presenceCheckIntervalRef = useRef<number | null>(null);
   const presenceCountdownRef = useRef<number | null>(null);
@@ -218,6 +220,16 @@ const SmartAdsSystem = () => {
     manualMode,
     manualQueue,
   });
+
+  // Background cloud sync (analytics push + ad metadata pull)
+  const { syncStatus, cloudAds } = useSupabaseSync();
+
+  // Log sync status changes
+  useEffect(() => {
+    if (syncStatus.lastSyncAt) {
+      console.log(`[CloudSync] Last sync: ${new Date(syncStatus.lastSyncAt).toLocaleTimeString()}, pending: ${syncStatus.pendingCount}`);
+    }
+  }, [syncStatus.lastSyncAt, syncStatus.pendingCount]);
 
   // Update queue when the ad LIBRARY changes (not after reorder)
   const prevAdsJsonRef = useRef<string>('');
@@ -457,7 +469,7 @@ const SmartAdsSystem = () => {
                   middleAged: detection.ageGroup === 'middleAged' ? detection.confidence : 0, 
                   senior: detection.ageGroup === 'senior' ? detection.confidence : 0 
                 },
-                seenFrames: 1,
+                seenFrames: config.minConsecutiveFrames, // Credit the frames it took to verify
                 bestFaceScore: detection.faceScore,
                 bestConfidence: detection.confidence,
                 finalGender: detection.gender,
@@ -794,6 +806,98 @@ const SmartAdsSystem = () => {
     }
   }, [addLog]);
 
+  // ─── Helper to end capture session and save analytics ────────
+  const endCaptureSession = useCallback(() => {
+    if (!isCapturingRef.current) return;
+    
+    console.log('[Capture] Ending capture window');
+    isCapturingRef.current = false;
+    setIsCapturing(false);
+    
+    stopDetectionLoop();
+    stopWebcam();
+    
+    addLog('webcam', `📷 CAPTURE ENDED`);
+    
+    // Build session summary from aggregated viewers
+    if (captureSessionRef.current) {
+      const session = captureSessionRef.current;
+      
+      // Filter viewers who were seen in enough frames (reduces false positives)
+      // and only count those with at least one confident demographic classification.
+      const stableViewers = Array.from(session.viewers.values())
+        .filter(v => v.seenFrames >= MIN_FRAMES_FOR_SESSION)
+        .filter(v => v.bestConfidence >= captureSettings.minDemographicConfidence);
+
+      // Calculate demographics from session summary (unique viewers, not per-frame counts)
+      const sessionDemographics: DemographicCounts = {
+        male: stableViewers.filter(v => v.finalGender === 'male').length,
+        female: stableViewers.filter(v => v.finalGender === 'female').length,
+        child: stableViewers.filter(v => v.finalAgeGroup === 'child').length,
+        teen: stableViewers.filter(v => v.finalAgeGroup === 'teen').length,
+        youngAdult: stableViewers.filter(v => v.finalAgeGroup === 'youngAdult').length,
+        middleAged: stableViewers.filter(v => v.finalAgeGroup === 'middleAged').length,
+        senior: stableViewers.filter(v => v.finalAgeGroup === 'senior').length,
+      };
+      
+      // Create summary for display
+      const summary: CaptureSessionSummary = {
+        startedAt: session.startedAt,
+        endedAt: Date.now(),
+        totalFrames: session.frameCount,
+        uniqueViewers: stableViewers.length,
+        demographics: sessionDemographics,
+        viewers: stableViewers,
+      };
+      
+      setLastSessionSummary(summary);
+      setShowSessionSummary(true);
+      
+      // Log session summary
+      addLog('info', `📊 Session Summary: ${stableViewers.length} unique viewers over ${session.frameCount} frames`);
+      addLog('info', `📊 Demographics: ${sessionDemographics.male}M/${sessionDemographics.female}F, ${sessionDemographics.child} child/${sessionDemographics.teen} teen/${sessionDemographics.youngAdult} youngAdult/${sessionDemographics.middleAged} middleAged/${sessionDemographics.senior} senior`);
+      
+      // Reorder queue based on session summary (not last frame)
+      if (sessionDemographics.male + sessionDemographics.female > 0) {
+        reorderQueue(sessionDemographics);
+      }
+      
+      // Record analytics
+      recordAnalyticsSession({
+        startedAt: session.startedAt,
+        endedAt: Date.now(),
+        peakViewers: stableViewers.length,
+        totalViewers: stableViewers.length,
+        maleCount: sessionDemographics.male,
+        femaleCount: sessionDemographics.female,
+        childCount: sessionDemographics.child,
+        teenCount: sessionDemographics.teen,
+        youngAdultCount: sessionDemographics.youngAdult,
+        middleAgedCount: sessionDemographics.middleAged,
+        seniorCount: sessionDemographics.senior,
+        adId: currentAd?.id || '',
+        adTitle: currentAd?.title || '',
+      });
+
+      // Auto-pause if no viewers and auto-pause enabled
+      if (stableViewers.length === 0 && captureSettings.autoPauseEnabled) {
+        setIsAutoPaused(true);
+        isAutoPausedRef.current = true;
+        setIsPlaying(false);
+        addLog('info', '⏸️ Auto-paused: no audience detected');
+        startPresenceChecks();
+      }
+      
+      // Clear session
+      captureSessionRef.current = null;
+      
+      // Auto-hide summary after 8 seconds
+      setTimeout(() => {
+        setShowSessionSummary(false);
+      }, 8000);
+    }
+  }, [currentAd, stopDetectionLoop, stopWebcam, addLog, reorderQueue, captureSettings.minDemographicConfidence, captureSettings.autoPauseEnabled]);
+
   // Capture window logic - only runs when not in manual mode
   useEffect(() => {
     if (!currentAd || !isPlaying || manualMode) return;
@@ -808,7 +912,7 @@ const SmartAdsSystem = () => {
       setIsCapturing(true);
       
       // Reset for new capture session
-      setDemographics({ male: 0, female: 0, kid: 0, young: 0, adult: 0 });
+      setDemographics({ male: 0, female: 0, child: 0, teen: 0, youngAdult: 0, middleAged: 0, senior: 0 });
       setCurrentViewers([]);
       resetSimulatedPerson();
       
@@ -828,89 +932,9 @@ const SmartAdsSystem = () => {
       });
 
     } else if (!inCaptureWindow && isCapturingRef.current) {
-      console.log('[Capture] Ending capture window');
-      isCapturingRef.current = false;
-      setIsCapturing(false);
-      
-      stopDetectionLoop();
-      stopWebcam();
-      
-      addLog('webcam', `📷 CAPTURE ENDED`);
-      
-      // Build session summary from aggregated viewers
-      if (captureSessionRef.current) {
-        const session = captureSessionRef.current;
-        
-        // Filter viewers who were seen in enough frames (reduces false positives)
-        // and only count those with at least one confident demographic classification.
-        const stableViewers = Array.from(session.viewers.values())
-          .filter(v => v.seenFrames >= MIN_FRAMES_FOR_SESSION)
-          .filter(v => v.bestConfidence >= captureSettings.minDemographicConfidence);
-
-        // Calculate demographics from session summary (unique viewers, not per-frame counts)
-        const sessionDemographics: DemographicCounts = {
-          male: stableViewers.filter(v => v.finalGender === 'male').length,
-          female: stableViewers.filter(v => v.finalGender === 'female').length,
-          kid: stableViewers.filter(v => v.finalAgeGroup === 'kid').length,
-          young: stableViewers.filter(v => v.finalAgeGroup === 'young').length,
-          adult: stableViewers.filter(v => v.finalAgeGroup === 'adult').length,
-        };
-        
-        // Create summary for display
-        const summary: CaptureSessionSummary = {
-          startedAt: session.startedAt,
-          endedAt: Date.now(),
-          totalFrames: session.frameCount,
-          uniqueViewers: stableViewers.length,
-          demographics: sessionDemographics,
-          viewers: stableViewers,
-        };
-        
-        setLastSessionSummary(summary);
-        setShowSessionSummary(true);
-        
-        // Log session summary
-        addLog('info', `📊 Session Summary: ${stableViewers.length} unique viewers over ${session.frameCount} frames`);
-        addLog('info', `📊 Demographics: ${sessionDemographics.male}M/${sessionDemographics.female}F, ${sessionDemographics.kid} kid/${sessionDemographics.young} young/${sessionDemographics.adult} adult`);
-        
-        // Reorder queue based on session summary (not last frame)
-        if (sessionDemographics.male + sessionDemographics.female > 0) {
-          reorderQueue(sessionDemographics);
-        }
-        
-        // Record analytics
-        recordAnalyticsSession({
-          startedAt: session.startedAt,
-          endedAt: Date.now(),
-          peakViewers: stableViewers.length,
-          totalViewers: stableViewers.length,
-          maleCount: sessionDemographics.male,
-          femaleCount: sessionDemographics.female,
-          kidCount: sessionDemographics.kid,
-          youngCount: sessionDemographics.young,
-          adultCount: sessionDemographics.adult,
-          adId: currentAd?.id || '',
-          adTitle: currentAd?.title || '',
-        });
-
-        // Auto-pause if no viewers and auto-pause enabled
-        if (stableViewers.length === 0 && captureSettings.autoPauseEnabled) {
-          setIsAutoPaused(true);
-          setIsPlaying(false);
-          addLog('info', '⏸️ Auto-paused: no audience detected');
-          startPresenceChecks();
-        }
-        
-        // Clear session
-        captureSessionRef.current = null;
-        
-        // Auto-hide summary after 8 seconds
-        setTimeout(() => {
-          setShowSessionSummary(false);
-        }, 8000);
-      }
+      endCaptureSession();
     }
-  }, [currentTime, currentAd, isPlaying, manualMode, startWebcam, stopWebcam, startDetectionLoop, stopDetectionLoop, addLog, reorderQueue, captureSettings.autoPauseEnabled]);
+  }, [currentTime, currentAd, isPlaying, manualMode, startWebcam, startDetectionLoop, endCaptureSession]);
 
   // ─── Auto-pause presence checking ──────────────────────────
   const stopPresenceChecks = useCallback(() => {
@@ -927,44 +951,115 @@ const SmartAdsSystem = () => {
 
   const startPresenceChecks = useCallback(() => {
     stopPresenceChecks();
-    const baseInterval = captureSettings.presenceCheckInterval;
-    // Add jitter: +/- 5 seconds
-    const jitter = Math.floor(Math.random() * 10) - 5;
-    const interval = Math.max(10, baseInterval + jitter) * 1000;
-
-    let countdown = Math.round(interval / 1000);
+    
+    // Use exact interval (removed the +/- 5s jitter)
+    const intervalSeconds = captureSettings.presenceCheckInterval;
+    let countdown = intervalSeconds;
     setNextCheckIn(countdown);
 
-    presenceCountdownRef.current = window.setInterval(() => {
+    let isScanningForPresence = false;
+    let cameraBooted = false;
+    
+    // We want to turn the camera on 5 seconds BEFORE the timer expires
+    // If the interval is very short (e.g. 5s or less), we'll turn it on 1 second after the timer starts
+    const scanStartAt = Math.min(5, Math.max(1, intervalSeconds - 1));
+
+    presenceCountdownRef.current = window.setInterval(async () => {
       countdown--;
       setNextCheckIn(Math.max(0, countdown));
-    }, 1000);
 
-    presenceCheckIntervalRef.current = window.setInterval(async () => {
-      addLog('info', '👀 Presence check: scanning for audience...');
-      
-      // Try to start webcam for a single check
-      const started = await startWebcam();
-      if (started && videoRef.current) {
+      // Phase 1: Wake up the camera BEFORE the timer expires
+      if (countdown === scanStartAt && !isScanningForPresence) {
+        isScanningForPresence = true;
+        cameraBooted = false;
+        addLog('info', '👀 Waking up camera for presence check...');
+        startWebcam().then(success => {
+          cameraBooted = success;
+        });
+        return; // Skip detection on this exact second to give it time to boot
+      }
+
+      // Phase 2: Continuously scan while the timer finishes
+      if (isScanningForPresence && cameraBooted && videoRef.current) {
         const results = await detectFaces(videoRef.current);
-        stopWebcam();
-
+        
         if (results.length > 0) {
           addLog('info', `✅ Audience detected (${results.length} faces) — resuming ads`);
+          
+          // Identify demographics of the people who woke up the screen
+          const confidentResults = results.filter(r => r.confidence >= captureSettings.minDemographicConfidence);
+          if (confidentResults.length > 0) {
+            const currentDemographics: DemographicCounts = {
+              male: confidentResults.filter(r => r.gender === 'male').length,
+              female: confidentResults.filter(r => r.gender === 'female').length,
+              child: confidentResults.filter(r => r.ageGroup === 'child').length,
+              teen: confidentResults.filter(r => r.ageGroup === 'teen').length,
+              youngAdult: confidentResults.filter(r => r.ageGroup === 'youngAdult').length,
+              middleAged: confidentResults.filter(r => r.ageGroup === 'middleAged').length,
+              senior: confidentResults.filter(r => r.ageGroup === 'senior').length,
+            };
+            
+            // Log this wakeup event to analytics
+            recordAnalyticsSession({
+              startedAt: Date.now() - 5000,
+              endedAt: Date.now(),
+              peakViewers: confidentResults.length,
+              totalViewers: confidentResults.length,
+              maleCount: currentDemographics.male,
+              femaleCount: currentDemographics.female,
+              childCount: currentDemographics.child,
+              teenCount: currentDemographics.teen,
+              youngAdultCount: currentDemographics.youngAdult,
+              middleAgedCount: currentDemographics.middleAged,
+              seniorCount: currentDemographics.senior,
+              adId: 'standby-wakeup',
+              adTitle: 'Screen Wakeup (Presence Check)',
+            });
+            
+            // Reorder the queue to match the new audience
+            reorderQueue(currentDemographics);
+            
+            // Fetch the new best-matching ad
+            const nextAd = getNextAd();
+            if (nextAd) {
+              const adWithWindow = {
+                ...nextAd,
+                captureStart: Math.floor(nextAd.duration * captureSettings.startPercent / 100),
+                captureEnd: Math.floor(nextAd.duration * captureSettings.endPercent / 100),
+              };
+              setCurrentAd(adWithWindow);
+              setCurrentTime(0);
+            }
+          }
+
+          stopWebcam();
           setIsAutoPaused(false);
+          isAutoPausedRef.current = false;
           setIsPlaying(true);
           stopPresenceChecks();
-        } else {
-          addLog('info', '❌ No audience — staying paused');
-          // Reset countdown
-          countdown = Math.round(interval / 1000);
-          setNextCheckIn(countdown);
+          return;
         }
-      } else {
-        addLog('info', '⚠️ Could not activate camera for presence check');
       }
-    }, interval);
-  }, [captureSettings.presenceCheckInterval, startWebcam, stopWebcam, detectFaces, videoRef, addLog, stopPresenceChecks]);
+
+      // Phase 3: Timer reached 0 and no one was found
+      if (countdown <= 0) {
+        if (isScanningForPresence) {
+          addLog('info', '❌ No audience — staying paused');
+          stopWebcam();
+          isScanningForPresence = false;
+          cameraBooted = false;
+        }
+        // Restart the countdown for the next cycle
+        countdown = intervalSeconds;
+        setNextCheckIn(countdown);
+      }
+    }, 1000);
+  }, [
+    captureSettings.presenceCheckInterval, captureSettings.minDemographicConfidence,
+    captureSettings.startPercent, captureSettings.endPercent,
+    startWebcam, stopWebcam, detectFaces, videoRef, addLog, stopPresenceChecks,
+    reorderQueue, getNextAd
+  ]);
 
   // ─── Reorder queue when live audience changes ──────────────
   const reorderDebounceRef = useRef<number | null>(null);
@@ -1032,9 +1127,11 @@ const SmartAdsSystem = () => {
         totalViewers: total,
         maleCount: demo.male,
         femaleCount: demo.female,
-        kidCount: demo.kid,
-        youngCount: demo.young,
-        adultCount: demo.adult,
+        childCount: demo.child,
+        teenCount: demo.teen,
+        youngAdultCount: demo.youngAdult,
+        middleAgedCount: demo.middleAged,
+        seniorCount: demo.senior,
         adId: ad?.id || '',
         adTitle: ad?.title || '',
       });
@@ -1089,10 +1186,9 @@ const SmartAdsSystem = () => {
   }, [captureSettings, addLog]);
 
   const handleAdEnded = useCallback(() => {
-    isCapturingRef.current = false;
-    setIsCapturing(false);
-    stopDetectionLoop();
-    stopWebcam();
+    // Crucial: If the ad ends unexpectedly or the capture window touches the very end of the ad,
+    // we MUST end the capture session and save the analytics before clearing it!
+    endCaptureSession();
 
     const nextAd = getNextAd();
     if (nextAd) {
@@ -1103,10 +1199,12 @@ const SmartAdsSystem = () => {
       };
       setCurrentAd(adWithWindow);
       setCurrentTime(0);
-      setIsPlaying(true);
+      if (!isAutoPausedRef.current) {
+        setIsPlaying(true);
+      }
       addLog('info', `Capture window: ${adWithWindow.captureStart}s - ${adWithWindow.captureEnd}s`);
     }
-  }, [getNextAd, stopWebcam, stopDetectionLoop, addLog, captureSettings]);
+  }, [endCaptureSession, getNextAd, captureSettings, addLog]);
 
   const handleSkip = useCallback(() => {
     addLog('ad', `⏭️ Skipped: "${currentAd?.title}"`);
