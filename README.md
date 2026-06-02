@@ -125,12 +125,18 @@ To test the Smart Ads System, follow these steps:
 ----------------
 Here are some screenshots of the Smart Ads System:
 
-* **Landing Page**: [![Landing Page](https://i.imgur.com/wRKeq3r.png)](https://i.imgur.com/wRKeq3r.png)
-* **Dashboard**: [![Dashboard](https://i.imgur.com/AQ8dBUa.png)](https://i.imgur.com/AQ8dBUa.png)
-* **System Logs**: [![System Logs](https://i.imgur.com/gSwMi36.png)](https://i.imgur.com/gSwMi36.png)
-* **Ad Library**: [![Ad Library](https://i.imgur.com/tIWliUy.png)](https://i.imgur.com/tIWliUy.png)
-* **Settings**: [![Settings](https://i.imgur.com/M161KxM.png)](https://i.imgur.com/M161KxM.png)
-* **Analytics Page**: [![Analytics Page](https://i.imgur.com/2SHuYQH.png)](https://i.imgur.com/2SHuYQH.png)
+* **Landing Page**: 
+[![Landing Page](https://i.imgur.com/wRKeq3r.png)](https://i.imgur.com/wRKeq3r.png)
+* **Dashboard**: 
+[![Dashboard](https://i.imgur.com/AQ8dBUa.png)](https://i.imgur.com/AQ8dBUa.png)
+* **System Logs**: 
+[![System Logs](https://i.imgur.com/gSwMi36.png)](https://i.imgur.com/gSwMi36.png)
+* **Ad Library**: 
+[![Ad Library](https://i.imgur.com/tIWliUy.png)](https://i.imgur.com/tIWliUy.png)
+* **Settings**: 
+[![Settings](https://i.imgur.com/M161KxM.png)](https://i.imgur.com/M161KxM.png)
+* **Analytics Page**: 
+[![Analytics Page](https://i.imgur.com/2SHuYQH.png)](https://i.imgur.com/2SHuYQH.png)
 
 📦 API Reference
 ----------------
