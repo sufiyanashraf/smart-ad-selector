@@ -19,9 +19,24 @@ import { AdMetadata } from '@/types/ad';
 // Sync interval: check every 60 seconds
 const SYNC_INTERVAL_MS = 60_000;
 
-// Screen identity from .env.local
-const OUTLET_ID = import.meta.env.VITE_OUTLET_ID || '';
-const SCREEN_ID = import.meta.env.VITE_SCREEN_ID || '';
+// Screen identity: check localStorage first (set via /config page), then .env.local
+const CONFIG_STORAGE_KEY = 'smartads-screen-config';
+
+function getScreenConfig(): { outletId: string; screenId: string } {
+  try {
+    const raw = localStorage.getItem(CONFIG_STORAGE_KEY);
+    if (raw) {
+      const config = JSON.parse(raw);
+      if (config.outlet_id && config.screen_id) {
+        return { outletId: config.outlet_id, screenId: config.screen_id };
+      }
+    }
+  } catch { /* ignore parse errors */ }
+  return {
+    outletId: import.meta.env.VITE_OUTLET_ID || '',
+    screenId: import.meta.env.VITE_SCREEN_ID || '',
+  };
+}
 
 export interface SyncStatus {
   isOnline: boolean;
@@ -53,9 +68,10 @@ export function useSupabaseSync() {
     if (eligible.length === 0) return 0;
 
     // Map local sessions to the Supabase analytics_sessions schema
+    const { outletId, screenId } = getScreenConfig();
     const rows = eligible.map(item => ({
-      screen_id: SCREEN_ID || null,
-      outlet_id: OUTLET_ID || null,
+      screen_id: screenId || null,
+      outlet_id: outletId || null,
       ad_title: item.session.adTitle,
       started_at: new Date(item.session.startedAt).toISOString(),
       ended_at: new Date(item.session.endedAt).toISOString(),
@@ -114,12 +130,13 @@ export function useSupabaseSync() {
 
   // ─── Send Heartbeat Ping ─────────────────────────────────────
   const sendHeartbeat = useCallback(async () => {
-    if (!SCREEN_ID) return;
+    const { screenId } = getScreenConfig();
+    if (!screenId) return;
 
     await supabase
       .from('screens')
       .update({ status: 'online', last_ping: new Date().toISOString() })
-      .eq('id', SCREEN_ID);
+      .eq('id', screenId);
   }, []);
 
   // ─── Main Sync Cycle ─────────────────────────────────────────
