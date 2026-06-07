@@ -10,6 +10,7 @@ import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import ModelEvaluation from "./pages/ModelEvaluation";
 import ManagerAnalytics from "./pages/ManagerAnalytics";
+import ScreenConfig from "./pages/ScreenConfig";
 
 const queryClient = new QueryClient();
 
@@ -26,6 +27,7 @@ const App = () => (
               <Route path="/dashboard" element={<Index />} />
               <Route path="/admin/evaluation" element={<ModelEvaluation />} />
               <Route path="/manager/analytics" element={<ManagerAnalytics />} />
+              <Route path="/config" element={<ScreenConfig />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
