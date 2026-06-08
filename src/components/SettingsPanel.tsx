@@ -53,6 +53,8 @@ interface CaptureSettings {
   autoPauseEnabled: boolean;
   /** Interval (seconds) between presence checks when auto-paused. */
   presenceCheckInterval: number;
+  /** Enable advanced AI features (Emotion + Attention tracking). */
+  enableAdvancedAI: boolean;
 }
 
 interface SettingsPanelProps {
@@ -243,6 +245,26 @@ export const SettingsPanel = ({ settings, onSettingsChange }: SettingsPanelProps
             <p className="text-xs text-muted-foreground">
               🚫 Increase if you see "ghost" detections on walls or objects
             </p>
+          </div>
+
+          {/* Advanced AI Toggle */}
+          <div className="flex items-center justify-between p-3 rounded-lg bg-indigo-500/10 border border-indigo-500/20">
+            <div className="space-y-0.5 flex-1">
+              <Label className="flex items-center gap-2">
+                <BarChart3 className="h-4 w-4 text-indigo-500" />
+                Advanced AI (Emotion & Attention)
+                <InfoTooltip text="Enables emotion recognition and gaze tracking. Turn off to save CPU/GPU resources and disable advanced data collection." />
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                🧠 Disable to significantly reduce screen load
+              </p>
+            </div>
+            <input
+              type="checkbox"
+              checked={localSettings.enableAdvancedAI ?? true}
+              onChange={(e) => setLocalSettings(prev => ({ ...prev, enableAdvancedAI: e.target.checked }))}
+              className="h-4 w-4 rounded border-gray-300"
+            />
           </div>
 
           {/* Demographic Confidence */}

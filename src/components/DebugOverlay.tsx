@@ -130,6 +130,9 @@ export const DebugOverlay = ({ debug, trackedFaces, show }: DebugOverlayProps) =
                 <span className="text-primary font-bold">#{i + 1}</span>
                 <span>{face.gender === 'male' ? '♂' : '♀'}</span>
                 <span className="capitalize">{face.ageGroup}</span>
+                <span title={`Emotion: ${face.stableEmotion}`}>
+                  {face.stableEmotion === 'happy' ? '😊' : face.stableEmotion === 'sad' ? '😢' : face.stableEmotion === 'angry' ? '😠' : face.stableEmotion === 'surprised' ? '😲' : face.stableEmotion === 'fearful' ? '😨' : face.stableEmotion === 'disgusted' ? '🤢' : '😐'}
+                </span>
                 <span className={cn(
                   'font-medium',
                   face.faceScore >= 0.4 ? 'text-green-500' : 
@@ -145,6 +148,15 @@ export const DebugOverlay = ({ debug, trackedFaces, show }: DebugOverlayProps) =
                   face.detectorUsed === 'ssd' ? 'bg-blue-500/20 text-blue-400' : 'bg-primary/20 text-primary'
                 )}>
                   {face.detectorUsed}
+                </span>
+                <span className={cn(
+                  'text-[10px] px-1 rounded',
+                  face.attentionState === 'attending' ? 'bg-green-500/20 text-green-400' :
+                  face.attentionState === 'distracted' ? 'bg-yellow-500/20 text-yellow-400' :
+                  'bg-red-500/20 text-red-400'
+                )} title={`Yaw: ${face.headPose.yaw.toFixed(1)}° Pitch: ${face.headPose.pitch.toFixed(1)}°`}>
+                  {face.attentionState === 'attending' ? '👀' : face.attentionState === 'distracted' ? '👁️' : '🚫'}
+                  {' Y'}:{face.headPose.yaw.toFixed(0)}° P:{face.headPose.pitch.toFixed(0)}°
                 </span>
               </div>
             ))}

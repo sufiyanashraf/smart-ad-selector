@@ -4,10 +4,11 @@ import * as tf from '@tensorflow/tfjs';
 
 // Detection timeout to prevent hanging
 const DETECTION_TIMEOUT = 10000;
-import { DetectionResult, FaceBoundingBox } from '@/types/ad';
+import { DetectionResult, FaceBoundingBox, EmotionType } from '@/types/ad';
 import { DetectionDebugInfo, CCTVDetectionConfig, DEFAULT_CCTV_CONFIG, DEFAULT_WEBCAM_CONFIG } from '@/types/detection';
 import { createPreprocessedCanvas, PreprocessingOptions, ROIConfig } from '@/utils/imagePreprocessing';
 import { hasTextureVariation, applyFemaleBoost, analyzeHairRegion } from '@/utils/genderHeuristics';
+import { estimateHeadPose, classifyAttention, type HeadPose, type AttentionState } from '@/utils/headPoseEstimation';
 
 // Use local models from public folder - no CORS issues
 const MODEL_URL = '/models';
@@ -41,6 +42,8 @@ export const useFaceDetection = (
   const [error, setError] = useState<string | null>(null);
   const [backend, setBackend] = useState<string>('');
   const [ssdLoaded, setSsdLoaded] = useState(false);
+  const [expressionsLoaded, setExpressionsLoaded] = useState(false);
+  const [landmarksLoaded, setLandmarksLoaded] = useState(false);
   
   const loadingRef = useRef(false);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -95,8 +98,28 @@ export const useFaceDetection = (
         ]);
         
         console.log('[FaceAPI] ✅ TinyFaceDetector + AgeGender loaded');
-        setLoadingProgress(70);
+        setLoadingProgress(60);
         setIsModelLoaded(true);
+
+        // Load Face Expression model for emotion recognition
+        try {
+          await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
+          console.log('[FaceAPI] ✅ Face Expression model loaded');
+          setExpressionsLoaded(true);
+        } catch (e) {
+          console.log('[FaceAPI] ⚠️ Face Expression model not available, emotion detection disabled');
+        }
+        setLoadingProgress(75);
+
+        // Load Face Landmark model for head pose estimation (attention tracking)
+        try {
+          await faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL);
+          console.log('[FaceAPI] ✅ Face Landmark 68 Tiny model loaded');
+          setLandmarksLoaded(true);
+        } catch (e) {
+          console.log('[FaceAPI] ⚠️ Face Landmark model not available, head pose disabled');
+        }
+        setLoadingProgress(80);
 
         // Try to load SSD Mobilenet for CCTV mode (optional, don't fail if missing)
         try {
@@ -297,34 +320,42 @@ export const useFaceDetection = (
   const runTinyDetection = useCallback(async (
     input: HTMLVideoElement | HTMLCanvasElement,
     inputSize: number,
-    scoreThreshold: number
+    scoreThreshold: number,
+    enableAdvancedAI: boolean = true
   ) => {
-    return faceapi
-      .detectAllFaces(
-        input,
-        new faceapi.TinyFaceDetectorOptions({
-          inputSize,
-          scoreThreshold,
-        })
-      )
-      .withAgeAndGender();
+    const detectTask = faceapi.detectAllFaces(
+      input,
+      new faceapi.TinyFaceDetectorOptions({
+        inputSize,
+        scoreThreshold,
+      })
+    );
+
+    if (enableAdvancedAI) {
+      return detectTask.withFaceLandmarks(true).withFaceExpressions().withAgeAndGender();
+    }
+    return detectTask.withAgeAndGender();
   }, []);
 
   // Run SSD Mobilenet
   const runSsdDetection = useCallback(async (
     input: HTMLVideoElement | HTMLCanvasElement,
-    minConfidence: number
+    minConfidence: number,
+    enableAdvancedAI: boolean = true
   ) => {
     if (!ssdLoaded) return [];
     
-    return faceapi
-      .detectAllFaces(
-        input,
-        new faceapi.SsdMobilenetv1Options({
-          minConfidence,
-        })
-      )
-      .withAgeAndGender();
+    const detectTask = faceapi.detectAllFaces(
+      input,
+      new faceapi.SsdMobilenetv1Options({
+        minConfidence,
+      })
+    );
+
+    if (enableAdvancedAI) {
+      return detectTask.withFaceLandmarks(true).withFaceExpressions().withAgeAndGender();
+    }
+    return detectTask.withAgeAndGender();
   }, [ssdLoaded]);
 
   // Create upscaled/preprocessed canvas
@@ -484,12 +515,65 @@ export const useFaceDetection = (
           }
         }
 
+        // Extract emotion data if available
+        let emotion: EmotionType | undefined = undefined;
+        let emotionConfidence: number | undefined = undefined;
+        let emotions: Partial<Record<EmotionType, number>> | undefined = undefined;
+        
+        if (detection.expressions) {
+          emotion = 'neutral';
+          emotionConfidence = 0;
+          emotions = {};
+          const exprEntries = Object.entries(detection.expressions) as [EmotionType, number][];
+          // Store all emotion probabilities
+          for (const [key, value] of exprEntries) {
+            if (typeof value === 'number') {
+              emotions[key as EmotionType] = value;
+            }
+          }
+          // Find dominant emotion
+          let maxProb = 0;
+          for (const [key, value] of exprEntries) {
+            if (typeof value === 'number' && value > maxProb) {
+              maxProb = value;
+              emotion = key as EmotionType;
+              emotionConfidence = value;
+            }
+          }
+        }
+
+        // Extract head pose from landmarks if available
+        let headPose: HeadPose | undefined = undefined;
+        let attentionState: AttentionState | undefined = undefined;
+        
+        if (detection.landmarks) {
+          headPose = { yaw: 0, pitch: 0, roll: 0 };
+          attentionState = 'attending';
+
+          try {
+            const positions = detection.landmarks.positions;
+            if (positions && positions.length >= 68) {
+              const landmarkPoints = positions.map((p: any) => ({ x: p.x / scaleBack, y: p.y / scaleBack }));
+              headPose = estimateHeadPose(landmarkPoints);
+              attentionState = classifyAttention(headPose);
+            }
+          } catch {
+            // Silently ignore landmark processing errors
+          }
+        }
+
         return {
           gender,
           ageGroup,
           confidence,
           faceScore,
           boundingBox,
+          emotion,
+          emotionConfidence,
+          emotions,
+          headPose,
+          attentionState,
+          isLookingAtScreen: attentionState === 'attending',
           trackingId: `${detectorUsed}_${Math.round(boundingBox.x)}_${Math.round(boundingBox.y)}`,
           lastSeen: Date.now(),
         } as DetectionResult;
@@ -582,10 +666,10 @@ export const useFaceDetection = (
           try {
             if (useSsdOnly) {
               // SSD-only mode
-              return await runSsdDetection(videoElement, pass1Threshold);
+              return await runSsdDetection(videoElement, pass1Threshold, config.enableAdvancedAI ?? true);
             } else {
               // TinyFace (default) - also used in dual mode
-              return await runTinyDetection(videoElement, inputSize, pass1Threshold);
+              return await runTinyDetection(videoElement, inputSize, pass1Threshold, config.enableAdvancedAI ?? true);
             }
           } catch {
             return [];
@@ -596,7 +680,7 @@ export const useFaceDetection = (
       // In dual mode OR when SSD is available and not in tiny-only mode, also run SSD
       if (ssdLoaded && (isDualMode || config.detector !== 'tiny')) {
         try {
-          const ssdResults = await runSsdDetection(videoElement, pass1Threshold);
+          const ssdResults = await runSsdDetection(videoElement, pass1Threshold, config.enableAdvancedAI ?? true);
           if (ssdResults.length > 0) {
             allPass1Detections.push(ssdResults);
             // Mark as dual or ssd based on mode
@@ -661,7 +745,11 @@ export const useFaceDetection = (
           const pass2Detections = await Promise.all(
             pass2Scales.map(async (inputSize) => {
               try {
-                return await runTinyDetection(processedCanvas, inputSize, rescueThreshold);
+                if (useSsdOnly) {
+                  return await runSsdDetection(processedCanvas, rescueThreshold, config.enableAdvancedAI ?? true);
+                } else {
+                  return await runTinyDetection(processedCanvas, inputSize, rescueThreshold, config.enableAdvancedAI ?? true);
+                }
               } catch {
                 return [];
               }
@@ -671,7 +759,7 @@ export const useFaceDetection = (
           // Also try SSD on preprocessed
           if (ssdLoaded) {
             try {
-              const ssdResults = await runSsdDetection(processedCanvas, rescueThreshold);
+              const ssdResults = await runSsdDetection(processedCanvas, rescueThreshold, config.enableAdvancedAI ?? true);
               if (ssdResults.length > 0) {
                 pass2Detections.push(ssdResults);
                 detectorUsed = 'ssd';
@@ -715,8 +803,8 @@ export const useFaceDetection = (
 
           if (enhancedCanvas) {
             const pass3Detections = await Promise.all([
-              runTinyDetection(enhancedCanvas, 608, ultraLowThreshold),
-              ssdLoaded ? runSsdDetection(enhancedCanvas, ultraLowThreshold) : Promise.resolve([]),
+              runTinyDetection(enhancedCanvas, 608, ultraLowThreshold, config.enableAdvancedAI ?? true),
+              ssdLoaded ? runSsdDetection(enhancedCanvas, ultraLowThreshold, config.enableAdvancedAI ?? true) : Promise.resolve([]),
             ]);
 
             // Keep only stronger candidates with valid size (reduces wall/sky false positives)

@@ -1,7 +1,8 @@
 import { RefObject, useRef, useEffect, useState, useMemo } from 'react';
 import { Camera, CameraOff, AlertCircle, Monitor, FileVideo, ZoomIn, ZoomOut, Maximize2, Check, X, Tag, Save } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { DetectionResult } from '@/types/ad';
+import { DetectionResult, EmotionType } from '@/types/ad';
+import { getAttentionEmoji, formatDwellTime } from '@/utils/headPoseEstimation';
 import { DetectionDebugInfo, TrackedFace } from '@/types/detection';
 import { GroundTruthEntry } from '@/types/evaluation';
 import { InputSourceMode } from '@/hooks/useWebcam';
@@ -23,6 +24,7 @@ interface WebcamPreviewProps {
   debugMode?: boolean;
   debugInfo?: DetectionDebugInfo | null;
   trackedFaces?: TrackedFace[];
+  enableAdvancedAI?: boolean;
   /** Enable labeling mode for evaluation */
   labelingMode?: boolean;
   /** Callback when user labels a detection */
@@ -31,6 +33,20 @@ interface WebcamPreviewProps {
 
 // Track which faces have been labeled in this session
 const labeledFacesInSession = new Set<string>();
+
+// Map emotion type to compact emoji for bounding box labels
+const getEmotionEmojiCompact = (emotion?: EmotionType): string => {
+  switch (emotion) {
+    case 'happy': return '😊';
+    case 'sad': return '😢';
+    case 'angry': return '😠';
+    case 'fearful': return '😨';
+    case 'disgusted': return '🤢';
+    case 'surprised': return '😲';
+    case 'neutral': return '😐';
+    default: return '';
+  }
+};
 
 export const WebcamPreview = ({
   videoRef,
@@ -44,6 +60,7 @@ export const WebcamPreview = ({
   debugMode = false,
   debugInfo = null,
   trackedFaces = [],
+  enableAdvancedAI = true,
   labelingMode = false,
   onLabelDetection,
 }: WebcamPreviewProps) => {
@@ -269,7 +286,9 @@ export const WebcamPreview = ({
 
       // Draw label background - show gender text explicitly, use displayConfidence for labeled faces
       const genderText = detection.gender === 'male' ? '♂ Male' : '♀ Female';
-      const label = `${genderText} | ${detection.ageGroup} ${(displayConfidence * 100).toFixed(0)}%`;
+      const emotionEmoji = enableAdvancedAI ? getEmotionEmojiCompact(detection.emotion) : '';
+      const attentionIcon = (enableAdvancedAI && detection.attentionState) ? getAttentionEmoji(detection.attentionState) : '';
+      const label = [genderText, '|', detection.ageGroup, emotionEmoji, attentionIcon, `${(displayConfidence * 100).toFixed(0)}%`].filter(Boolean).join(' ');
       ctx.font = 'bold 12px sans-serif';
       const labelWidth = ctx.measureText(label).width + 10;
       const labelHeight = 20;
@@ -281,6 +300,31 @@ export const WebcamPreview = ({
       ctx.fillStyle = getHsl('--primary-foreground', 'hsl(0 0% 100%)');
       ctx.textBaseline = 'middle';
       ctx.fillText(label, scaledX + 5, scaledY - labelHeight / 2);
+
+      // Draw attention/dwell time badge below the bounding box
+      if (enableAdvancedAI && detection.attentionState && !justSaved && !(isLabeledInSession && labelingMode)) {
+        const dwellText = detection.dwellTimeMs ? formatDwellTime(detection.dwellTimeMs) : '0s';
+        const attBadge = `${attentionIcon} ${dwellText}`;
+        const attColor = detection.attentionState === 'attending'
+          ? 'hsl(142 71% 45%)'
+          : detection.attentionState === 'distracted'
+            ? 'hsl(45 93% 47%)'
+            : 'hsl(0 84% 60%)';
+        
+        ctx.font = 'bold 10px sans-serif';
+        const attWidth = ctx.measureText(attBadge).width + 8;
+        const attHeight = 16;
+        const attX = scaledX;
+        const attY = scaledY + scaledHeight + 2;
+        
+        ctx.fillStyle = attColor;
+        ctx.globalAlpha = 0.85;
+        ctx.fillRect(attX, attY, attWidth, attHeight);
+        ctx.globalAlpha = 1.0;
+        ctx.fillStyle = 'white';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(attBadge, attX + 4, attY + attHeight / 2);
+      }
 
       // Draw status indicator for labeled faces
       if (justSaved) {

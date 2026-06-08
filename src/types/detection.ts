@@ -2,8 +2,9 @@
  * Extended types for CCTV-optimized face detection
  */
 
-import { FaceBoundingBox, DetectionResult } from './ad';
+import { FaceBoundingBox, DetectionResult, EmotionType } from './ad';
 import { PreprocessingOptions, ROIConfig } from '@/utils/imagePreprocessing';
+import type { HeadPose, AttentionState } from '@/utils/headPoseEstimation';
 
 // Temporal voting for stable gender/age classification
 export interface DemographicVotes {
@@ -36,6 +37,18 @@ export interface TrackedFace {
   stableAgeGroup: 'child' | 'teen' | 'youngAdult' | 'middleAged' | 'senior';
   // User correction flag - when true, ignore AI updates
   isUserCorrected?: boolean;
+  // Emotion tracking
+  emotionVotes: Record<EmotionType, number>;
+  stableEmotion: EmotionType;
+  stableEmotionConfidence: number;
+  // Attention tracking (Phase 7)
+  headPose: HeadPose;
+  attentionState: AttentionState;
+  dwellTimeMs: number;           // Accumulated attending time
+  totalVisibleTimeMs: number;    // Total time visible
+  attentionFrames: number;       // Frames where viewer was attending
+  totalFrames: number;           // Total frames visible
+  lastAttendingAt: number;       // Timestamp of last attending state
 }
 
 export interface DetectionDebugInfo {
@@ -95,6 +108,9 @@ export interface CCTVDetectionConfig {
   
   // Enhanced rescue passes (Pass 2/3) for difficult CCTV footage
   enableEnhancedRescue?: boolean;
+  
+  // Advanced AI toggles
+  enableAdvancedAI?: boolean;
 }
 
 export const DEFAULT_CCTV_CONFIG: CCTVDetectionConfig = {
@@ -156,6 +172,9 @@ export interface ViewerAggregate {
   bestConfidence: number;
   finalGender: 'male' | 'female';
   finalAgeGroup: 'child' | 'teen' | 'youngAdult' | 'middleAged' | 'senior';
+  finalEmotion: EmotionType;
+  avgAttentionPercent: number;   // Average attention percentage over session
+  totalDwellTimeMs: number;      // Total time spent attending
 }
 
 export interface CaptureSessionSummary {
@@ -176,14 +195,27 @@ export interface CaptureSessionSummary {
 }
 
 export function toDetectionResult(tracked: TrackedFace): DetectionResult {
+  const totalVisibleTimeMs = tracked.totalVisibleTimeMs || (Date.now() - tracked.firstSeenAt);
+  const attentionPercent = totalVisibleTimeMs > 0
+    ? Math.round((tracked.dwellTimeMs / totalVisibleTimeMs) * 100)
+    : 0;
+
   return {
-    gender: tracked.stableGender,  // Use stable gender from votes
-    ageGroup: tracked.stableAgeGroup,  // Use stable age from votes
+    gender: tracked.stableGender,
+    ageGroup: tracked.stableAgeGroup,
     confidence: tracked.confidence,
     faceScore: tracked.faceScore,
     boundingBox: tracked.boundingBox,
     trackingId: tracked.id,
     lastSeen: tracked.lastSeenAt,
+    emotion: tracked.stableEmotion,
+    emotionConfidence: tracked.stableEmotionConfidence,
+    headPose: tracked.headPose,
+    attentionState: tracked.attentionState,
+    dwellTimeMs: tracked.dwellTimeMs,
+    totalVisibleTimeMs,
+    attentionPercent,
+    isLookingAtScreen: tracked.attentionState === 'attending',
   };
 }
 

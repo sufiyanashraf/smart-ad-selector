@@ -1,7 +1,8 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { AdMetadata, DemographicCounts, DetectionResult, FaceBoundingBox } from '@/types/ad';
+import { AdMetadata, DemographicCounts, DetectionResult, FaceBoundingBox, EmotionType } from '@/types/ad';
 import { TrackedFace, DEFAULT_CCTV_CONFIG, DEFAULT_WEBCAM_CONFIG, toDetectionResult, CaptureSessionSummary, ViewerAggregate, getStableGender, getStableAgeGroup } from '@/types/detection';
 import { GroundTruthEntry, EvaluationSession } from '@/types/evaluation';
+import { getAttentionEmoji, formatDwellTime } from '@/utils/headPoseEstimation';
 import { VideoPlayer } from '@/components/VideoPlayer';
 import { DemographicStats } from '@/components/DemographicStats';
 import { AdQueue } from '@/components/AdQueue';
@@ -30,6 +31,20 @@ const MIN_VOTE_CONFIDENCE = 0.65;
 // Minimum frames a face must be seen to count in session summary
 const MIN_FRAMES_FOR_SESSION = 2;
 
+// Map emotion to emoji for display
+const getEmotionEmoji = (emotion?: EmotionType): string => {
+  switch (emotion) {
+    case 'happy': return '😊';
+    case 'sad': return '😢';
+    case 'angry': return '😠';
+    case 'fearful': return '😨';
+    case 'disgusted': return '🤢';
+    case 'surprised': return '😲';
+    case 'neutral': return '😐';
+    default: return '😐';
+  }
+};
+
 const SmartAdsSystem = () => {
   // Settings state - default to 40% capture window (60%-100%) and medium sensitivity
   const [captureSettings, setCaptureSettings] = useState<CaptureSettings>({
@@ -46,7 +61,8 @@ const SmartAdsSystem = () => {
     useDualModelForVideo: true,
     enableYoloForVideo: false,
     autoPauseEnabled: false,
-    presenceCheckInterval: 30,
+    presenceCheckInterval: 15,
+    enableAdvancedAI: true,
   });
 
   // Labeling mode for evaluation
@@ -206,6 +222,7 @@ const SmartAdsSystem = () => {
         requireFaceTexture: captureSettings.requireFaceTexture,
         // Enable enhanced rescue passes for video when toggle is on
         enableEnhancedRescue: isVideoMode && captureSettings.enableYoloForVideo,
+        enableAdvancedAI: captureSettings.enableAdvancedAI,
       },
     }
   );
@@ -414,6 +431,33 @@ const SmartAdsSystem = () => {
             ? trackedFace.stableAgeGroup 
             : getStableAgeGroup(newAgeVotes, trackedFace.stableAgeGroup);
           
+          // Update emotion votes with exponential moving average
+          const newEmotionVotes = { ...trackedFace.emotionVotes };
+          if (captureSettings.enableAdvancedAI && detection.emotion && detection.emotionConfidence) {
+            const emotionAlpha = 0.3; // Smooth emotion changes
+            for (const key of Object.keys(newEmotionVotes) as EmotionType[]) {
+              newEmotionVotes[key] *= (1 - emotionAlpha);
+            }
+            if (detection.emotions) {
+              for (const [key, value] of Object.entries(detection.emotions)) {
+                if (typeof value === 'number') {
+                  newEmotionVotes[key as EmotionType] += value * emotionAlpha;
+                }
+              }
+            }
+          }
+          // Find stable emotion from accumulated votes
+          let stableEmotion: EmotionType = trackedFace.stableEmotion;
+          let stableEmotionConfidence = trackedFace.stableEmotionConfidence;
+          let maxEmotionVote = 0;
+          for (const [key, value] of Object.entries(newEmotionVotes)) {
+            if (value > maxEmotionVote) {
+              maxEmotionVote = value;
+              stableEmotion = key as EmotionType;
+              stableEmotionConfidence = value;
+            }
+          }
+          
           tracked.set(id, {
             ...trackedFace,
             boundingBox: {
@@ -439,6 +483,21 @@ const SmartAdsSystem = () => {
             stableGender,
             stableAgeGroup,
             isUserCorrected, // Preserve the flag
+            emotionVotes: newEmotionVotes,
+            stableEmotion: captureSettings.enableAdvancedAI ? stableEmotion : 'neutral',
+            stableEmotionConfidence,
+            // Attention tracking
+            headPose: detection.headPose || { yaw: 0, pitch: 0, roll: 0 },
+            attentionState: captureSettings.enableAdvancedAI ? (detection.attentionState || 'attending') : 'attending',
+            dwellTimeMs: trackedFace.dwellTimeMs + (
+              (captureSettings.enableAdvancedAI && detection.attentionState === 'attending')
+                ? (currentTime - trackedFace.lastSeenAt)
+                : 0
+            ),
+            totalVisibleTimeMs: currentTime - trackedFace.firstSeenAt,
+            attentionFrames: trackedFace.attentionFrames + ((captureSettings.enableAdvancedAI && detection.attentionState === 'attending') ? 1 : 0),
+            totalFrames: trackedFace.totalFrames + 1,
+            lastAttendingAt: (captureSettings.enableAdvancedAI && detection.attentionState === 'attending') ? currentTime : trackedFace.lastAttendingAt,
           });
           
           // Update capture session aggregation
@@ -474,6 +533,9 @@ const SmartAdsSystem = () => {
                 bestConfidence: detection.confidence,
                 finalGender: detection.gender,
                 finalAgeGroup: detection.ageGroup,
+                finalEmotion: detection.emotion || 'neutral',
+                avgAttentionPercent: 100,
+                totalDwellTimeMs: 0,
               });
             }
           }
@@ -523,6 +585,25 @@ const SmartAdsSystem = () => {
           ageVotes: initialAgeVotes,
           stableGender: detection.gender,
           stableAgeGroup: detection.ageGroup,
+          emotionVotes: {
+            neutral: detection.emotions?.neutral || 0,
+            happy: detection.emotions?.happy || 0,
+            sad: detection.emotions?.sad || 0,
+            angry: detection.emotions?.angry || 0,
+            fearful: detection.emotions?.fearful || 0,
+            disgusted: detection.emotions?.disgusted || 0,
+            surprised: detection.emotions?.surprised || 0,
+          },
+          stableEmotion: captureSettings.enableAdvancedAI ? (detection.emotion || 'neutral') : 'neutral',
+          stableEmotionConfidence: detection.emotionConfidence || 0,
+          // Attention tracking
+          headPose: detection.headPose || { yaw: 0, pitch: 0, roll: 0 },
+          attentionState: captureSettings.enableAdvancedAI ? (detection.attentionState || 'attending') : 'attending',
+          dwellTimeMs: 0,
+          totalVisibleTimeMs: 0,
+          attentionFrames: (captureSettings.enableAdvancedAI && detection.attentionState === 'attending') ? 1 : 0,
+          totalFrames: 1,
+          lastAttendingAt: (captureSettings.enableAdvancedAI && detection.attentionState === 'attending') ? currentTime : 0,
         });
       }
       
@@ -568,7 +649,12 @@ const SmartAdsSystem = () => {
         setDemographics(newDemographics);
         lastDemographicsRef.current = newDemographics;
         
-        addLog('detection', `👁️ ${stableViewers.length} viewer(s): ${stableViewers.map(r => `${r.gender}/${r.ageGroup} (${Math.round(r.faceScore * 100)}%)`).join(', ')}`);
+        addLog('detection', `👁️ ${stableViewers.length} viewer(s): ${stableViewers.map(r => {
+          const emotionIcon = getEmotionEmoji(r.emotion);
+          const attentionIcon = getAttentionEmoji(r.attentionState);
+          const dwell = r.dwellTimeMs ? formatDwellTime(r.dwellTimeMs) : '0s';
+          return `${r.gender}/${r.ageGroup} ${emotionIcon} ${attentionIcon} ${dwell} (${Math.round(r.faceScore * 100)}%)`;
+        }).join(', ')}`);
       } else {
         // Clear demographics when no viewers
         const zeroDemographics: DemographicCounts = { male: 0, female: 0, child: 0, teen: 0, youngAdult: 0, middleAged: 0, senior: 0 };
@@ -1457,6 +1543,7 @@ const SmartAdsSystem = () => {
               debugMode={debugMode}
               debugInfo={getDebugInfo()}
               trackedFaces={trackedFacesArray}
+              enableAdvancedAI={captureSettings.enableAdvancedAI}
               labelingMode={labelingMode}
               onLabelDetection={handleLabelDetection}
             />
@@ -1476,6 +1563,7 @@ const SmartAdsSystem = () => {
             demographics={demographics}
             recentDetections={currentViewers}
             isCapturing={isCapturing}
+            enableAdvancedAI={captureSettings.enableAdvancedAI}
           />
           
           {manualMode ? (

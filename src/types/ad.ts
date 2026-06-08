@@ -1,3 +1,19 @@
+import type { HeadPose, AttentionState } from '@/utils/headPoseEstimation';
+
+export type { HeadPose, AttentionState };
+
+export type EmotionType = 'neutral' | 'happy' | 'sad' | 'angry' | 'fearful' | 'disgusted' | 'surprised';
+
+export interface EmotionCounts {
+  neutral: number;
+  happy: number;
+  sad: number;
+  angry: number;
+  fearful: number;
+  disgusted: number;
+  surprised: number;
+}
+
 export interface AdMetadata {
   id: string;
   filename: string;
@@ -37,6 +53,16 @@ export interface DetectionResult {
   trackingId?: string;         // For temporal tracking
   lastSeen?: number;           // Timestamp for tracking
   isUserCorrected?: boolean;   // True if user-labeled (100% confidence)
+  emotion?: EmotionType;       // Dominant detected emotion
+  emotionConfidence?: number;  // Confidence of dominant emotion (0-1)
+  emotions?: Partial<Record<EmotionType, number>>; // All emotion probabilities
+  // Attention tracking (Phase 7)
+  headPose?: HeadPose;         // Estimated head orientation (yaw/pitch/roll)
+  attentionState?: AttentionState; // attending | distracted | away
+  dwellTimeMs?: number;        // How long this viewer has been attending (ms)
+  totalVisibleTimeMs?: number; // How long this viewer has been visible (ms)
+  attentionPercent?: number;   // Percentage of time spent attending
+  isLookingAtScreen?: boolean; // Simple boolean for quick checks
 }
 
 export interface AdScore {
