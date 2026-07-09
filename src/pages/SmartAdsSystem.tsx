@@ -5,6 +5,7 @@ import { GroundTruthEntry, EvaluationSession } from '@/types/evaluation';
 import { getAttentionEmoji, formatDwellTime } from '@/utils/headPoseEstimation';
 import { VideoPlayer } from '@/components/VideoPlayer';
 import { DemographicStats } from '@/components/DemographicStats';
+import { CrowdComposition } from '@/components/CrowdComposition';
 import { AdQueue } from '@/components/AdQueue';
 import { ManualQueueEditor } from '@/components/ManualQueueEditor';
 import { SystemLogs } from '@/components/SystemLogs';
@@ -18,7 +19,7 @@ import { useWebcam } from '@/hooks/useWebcam';
 import { useFaceDetection, resetSimulatedPerson } from '@/hooks/useFaceDetection';
 import { useAdQueue } from '@/hooks/useAdQueue';
 import { useSupabaseSync } from '@/hooks/useSupabaseSync';
-import { sampleAds } from '@/data/sampleAds';
+
 import { recordAnalyticsSession } from '@/utils/analyticsStorage';
 import { Tv, Zap, Activity, AlertCircle, CheckCircle, Eye, EyeOff, Play, Square, Cpu, Home, Tag, BarChart3 } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -72,23 +73,19 @@ const SmartAdsSystem = () => {
   const [cctvMode, setCctvMode] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
 
-  // Custom ads state - persisted to localStorage
+  // Custom ads state - loaded from playlist cache (managed by admin)
   const [customAds, setCustomAds] = useState<AdMetadata[]>(() => {
-    const saved = localStorage.getItem('smartads-custom-ads');
-    if (saved) {
+    // Try to load from playlist cache first (fetched from backend)
+    const playlistCache = localStorage.getItem('smartads-playlist-cache');
+    if (playlistCache) {
       try {
-        return JSON.parse(saved);
+        return JSON.parse(playlistCache);
       } catch {
-        return [...sampleAds];
+        return [];
       }
     }
-    return [...sampleAds];
+    return [];
   });
-
-  // Save ads to localStorage whenever they change
-  useEffect(() => {
-    localStorage.setItem('smartads-custom-ads', JSON.stringify(customAds));
-  }, [customAds]);
 
   // Recalculate ads when settings change
   const adsWithCaptureWindows = useMemo(() => {
@@ -230,7 +227,7 @@ const SmartAdsSystem = () => {
   // Get current active detector label for UI
   const activeDetectorLabel = isWebcamMode ? 'Tiny' : (ssdLoaded ? 'Dual' : 'Tiny');
   
-  const { queue, logs, getNextAd, reorderQueue, addLog, updateQueue, resetManualQueueIndex } = useAdQueue({
+  const { queue, logs, getNextAd, reorderQueue, addLog, updateQueue, resetManualQueueIndex, lastScores } = useAdQueue({
     customAds: adsWithCaptureWindows,
     captureStartPercent: captureSettings.startPercent,
     captureEndPercent: captureSettings.endPercent,
@@ -238,8 +235,15 @@ const SmartAdsSystem = () => {
     manualQueue,
   });
 
-  // Background cloud sync (analytics push + ad metadata pull)
-  const { syncStatus, cloudAds } = useSupabaseSync();
+  // Background cloud sync (analytics push + playlist pull)
+  const { syncStatus, cloudAds, triggerSync, playlistCacheTimestamp } = useSupabaseSync();
+
+  // Sync playlist from backend
+  useEffect(() => {
+    if (cloudAds && cloudAds.length > 0) {
+      setCustomAds(cloudAds);
+    }
+  }, [cloudAds]);
 
   // Log sync status changes
   useEffect(() => {
@@ -1460,9 +1464,8 @@ const SmartAdsSystem = () => {
             
             <AdManager 
               ads={customAds}
-              onAdsChange={handleAdsChange}
-              captureStartPercent={captureSettings.startPercent}
-              captureEndPercent={captureSettings.endPercent}
+              lastSyncTimestamp={playlistCacheTimestamp}
+              onRefresh={triggerSync}
             />
             <SettingsPanel 
               settings={captureSettings}
@@ -1559,6 +1562,11 @@ const SmartAdsSystem = () => {
             isVisible={showSessionSummary}
           />
           
+          <CrowdComposition
+            demographics={demographics}
+            viewerCount={currentViewers.length}
+          />
+          
           <DemographicStats
             demographics={demographics}
             recentDetections={currentViewers}
@@ -1576,6 +1584,7 @@ const SmartAdsSystem = () => {
             <AdQueue
               queue={queue}
               currentAdId={currentAd?.id || null}
+              adScores={lastScores}
             />
           )}
         </div>

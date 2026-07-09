@@ -15,6 +15,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { getSyncQueue, removeFromSyncQueue, markRetry } from '@/utils/syncQueue';
 import { AdMetadata } from '@/types/ad';
+import { syncPlaylist, getCacheTimestamp } from '@/utils/playlistSync';
 
 // Sync interval: check every 60 seconds
 const SYNC_INTERVAL_MS = 60_000;
@@ -100,32 +101,10 @@ export function useSupabaseSync() {
     return eligible.length;
   }, []);
 
-  // ─── Fetch Ad Targeting Rules from Supabase ─────────────────
-  const fetchCloudAds = useCallback(async (): Promise<AdMetadata[]> => {
-    const { data, error } = await supabase
-      .from('ads')
-      .select('*')
-      .eq('is_active', true);
-
-    if (error) {
-      console.warn('[Sync] Failed to fetch cloud ads:', error.message);
-      return [];
-    }
-
-    if (!data || data.length === 0) return [];
-
-    // Map Supabase rows to local AdMetadata format
-    return data.map((row: Record<string, unknown>) => ({
-      id: row.id as string,
-      filename: row.filename as string,
-      title: row.title as string,
-      gender: (row.target_gender as string) as 'male' | 'female' | 'all',
-      ageGroup: (row.target_age_group as string).split(',').map(s => s.trim()) as AdMetadata['ageGroup'],
-      duration: row.duration as number,
-      captureStart: Math.floor((row.duration as number) * 0.6),
-      captureEnd: Math.floor((row.duration as number) * 0.95),
-      videoUrl: `/ads/${row.filename as string}`, // Points to public/ads/ folder
-    }));
+  // ─── Fetch Playlist from Supabase ───────────────────────────
+  const fetchPlaylistAds = useCallback(async (): Promise<AdMetadata[]> => {
+    const ads = await syncPlaylist();
+    return ads;
   }, []);
 
   // ─── Send Heartbeat Ping ─────────────────────────────────────
@@ -157,11 +136,11 @@ export function useSupabaseSync() {
         console.log(`[Sync] Pushed ${pushed} analytics sessions to Supabase`);
       }
 
-      // 2. Fetch latest ad targeting rules
-      const ads = await fetchCloudAds();
+      // 2. Fetch playlist from backend
+      const ads = await fetchPlaylistAds();
+      setCloudAds(ads);
       if (ads.length > 0) {
-        setCloudAds(ads);
-        console.log(`[Sync] Fetched ${ads.length} ad targeting rules from cloud`);
+        console.log(`[Sync] Playlist synced: ${ads.length} ads`);
       }
 
       // 3. Send heartbeat
@@ -187,7 +166,7 @@ export function useSupabaseSync() {
     } finally {
       isSyncingRef.current = false;
     }
-  }, [pushAnalytics, fetchCloudAds, sendHeartbeat]);
+  }, [pushAnalytics, fetchPlaylistAds, sendHeartbeat]);
 
   // ─── Start Background Loop ──────────────────────────────────
   useEffect(() => {
@@ -223,5 +202,6 @@ export function useSupabaseSync() {
     syncStatus,
     cloudAds,
     triggerSync: runSyncCycle,
+    playlistCacheTimestamp: getCacheTimestamp(),
   };
 }

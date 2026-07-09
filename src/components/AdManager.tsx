@@ -1,8 +1,5 @@
-import { useState } from 'react';
 import { AdMetadata } from '@/types/ad';
 import { 
-  FolderPlus, 
-  Trash2, 
   Tag, 
   Video, 
   User, 
@@ -10,13 +7,12 @@ import {
   Baby, 
   Briefcase,
   Smile,
-  Plus,
-  X,
-  Check,
-  Link
+  RefreshCw,
+  ListVideo,
+  Shield,
+  Clock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import {
   Dialog,
   DialogContent,
@@ -25,359 +21,112 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
 
 interface AdManagerProps {
   ads: AdMetadata[];
-  onAdsChange: (ads: AdMetadata[]) => void;
-  captureStartPercent: number;
-  captureEndPercent: number;
+  lastSyncTimestamp: number | null;
+  onRefresh: () => void;
 }
 
+/**
+ * Read-only playlist viewer.
+ * Ads are managed by the admin in the backend.
+ * This component only displays the current playlist and allows refreshing.
+ */
 export const AdManager = ({ 
   ads, 
-  onAdsChange, 
-  captureStartPercent, 
-  captureEndPercent 
+  lastSyncTimestamp,
+  onRefresh,
 }: AdManagerProps) => {
-  const [open, setOpen] = useState(false);
-  const [editingAd, setEditingAd] = useState<AdMetadata | null>(null);
-  const [isLoadingDuration, setIsLoadingDuration] = useState(false);
-  const [newAd, setNewAd] = useState<Partial<AdMetadata>>({
-    title: '',
-    gender: 'all',
-    ageGroup: ['all'],
-    duration: 30,
-    videoUrl: '',
-  });
 
-  // Auto-detect video duration when URL changes
-  const detectVideoDuration = async (url: string) => {
-    if (!url) return;
-    
-    setIsLoadingDuration(true);
-    try {
-      const video = document.createElement('video');
-      video.preload = 'metadata';
-      
-      await new Promise<void>((resolve, reject) => {
-        video.onloadedmetadata = () => {
-          const duration = Math.round(video.duration);
-          if (duration > 0 && duration < 3600) {
-            setNewAd(prev => ({ ...prev, duration }));
-          }
-          resolve();
-        };
-        video.onerror = () => reject(new Error('Failed to load video'));
-        video.src = url;
-      });
-    } catch (error) {
-      console.log('Could not auto-detect duration:', error);
-    } finally {
-      setIsLoadingDuration(false);
-    }
-  };
-
-  const handleUrlChange = (url: string) => {
-    setNewAd({ ...newAd, videoUrl: url });
-    if (url && url.startsWith('http')) {
-      detectVideoDuration(url);
-    }
-  };
-
-  const handleRemoveAd = (id: string) => {
-    const ad = ads.find(a => a.id === id);
-    onAdsChange(ads.filter(a => a.id !== id));
-    toast.success(`Removed "${ad?.title}"`);
-  };
-
-  const handleUpdateAd = (updatedAd: AdMetadata) => {
-    onAdsChange(ads.map(a => a.id === updatedAd.id ? updatedAd : a));
-    setEditingAd(null);
-    toast.success(`Updated "${updatedAd.title}"`);
-  };
-
-  const handleAddUrl = () => {
-    if (!newAd.videoUrl || !newAd.title) {
-      toast.error('Please enter both title and video URL');
-      return;
-    }
-
-    const duration = newAd.duration || 15;
-    const captureStart = Math.floor(duration * captureStartPercent / 100);
-    const captureEnd = Math.floor(duration * captureEndPercent / 100);
-
-    const ad: AdMetadata = {
-      id: `ad-${Date.now()}`,
-      filename: `${newAd.title}.mp4`,
-      title: newAd.title,
-      gender: (newAd.gender as 'male' | 'female' | 'all') || 'all',
-      ageGroup: (newAd.ageGroup as AdMetadata['ageGroup']) || ['all'],
-      duration,
-      captureStart,
-      captureEnd,
-      videoUrl: newAd.videoUrl,
-    };
-
-    onAdsChange([...ads, ad]);
-    toast.success(`Added "${ad.title}"`);
-    
-    // Reset form
-    setNewAd({
-      title: '',
-      gender: 'all',
-      ageGroup: ['all'],
-      duration: 30,
-      videoUrl: '',
-    });
+  const formatTimeSince = (timestamp: number | null): string => {
+    if (!timestamp) return 'Never';
+    const diff = Math.floor((Date.now() - timestamp) / 1000);
+    if (diff < 60) return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return new Date(timestamp).toLocaleDateString();
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="gap-2">
-          <FolderPlus className="h-4 w-4" />
-          Manage Ads
+          <ListVideo className="h-4 w-4" />
+          View Playlist
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-display flex items-center gap-2">
             <Video className="h-5 w-5 text-primary" />
-            Ad Library
+            Playlist
+            <span className="inline-flex items-center gap-1 ml-2 px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/20">
+              <Shield className="h-3 w-3" />
+              Managed by Admin
+            </span>
           </DialogTitle>
           <DialogDescription>
-            Upload video ads and configure their demographic targeting.
+            Playlist is configured by the admin. Refresh to pull the latest changes.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
-          {/* Add Ad Section */}
-          <div className="bg-muted/50 rounded-xl p-4 space-y-4 border border-dashed border-border">
-            <h4 className="font-medium flex items-center gap-2">
-              <Link className="h-4 w-4 text-primary" />
-              Add Ad from URL
-            </h4>
-            <p className="text-sm text-muted-foreground">
-              Enter a video URL from external sources (e.g., direct MP4 links, CDN URLs).
-            </p>
-
-            {/* URL Input */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <Input
-                placeholder="Ad title"
-                value={newAd.title || ''}
-                onChange={(e) => setNewAd({ ...newAd, title: e.target.value })}
-              />
-              <Input
-                placeholder="Video URL (duration auto-detected)"
-                value={newAd.videoUrl || ''}
-                onChange={(e) => handleUrlChange(e.target.value)}
-              />
+        <div className="space-y-4 py-4">
+          {/* Sync Info & Refresh */}
+          <div className="flex items-center justify-between bg-muted/50 rounded-lg px-4 py-2.5 border border-border">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Clock className="h-4 w-4" />
+              <span>Last synced: <span className="font-medium text-foreground">{formatTimeSince(lastSyncTimestamp)}</span></span>
             </div>
-
-            {/* Targeting Options */}
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1.5">
-                <label className="text-xs text-muted-foreground">Target Gender</label>
-                <Select 
-                  value={newAd.gender || 'all'} 
-                  onValueChange={(v) => setNewAd({ ...newAd, gender: v as any })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Genders</SelectItem>
-                    <SelectItem value="male">Male</SelectItem>
-                    <SelectItem value="female">Female</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5 col-span-2">
-                <label className="text-xs text-muted-foreground">Target Age (Multiple allowed)</label>
-                <div className="flex flex-wrap gap-1.5">
-                  {['all', 'child', 'teen', 'youngAdult', 'middleAged', 'senior'].map(age => {
-                    const isSelected = (newAd.ageGroup as string[])?.includes(age);
-                    return (
-                      <div 
-                        key={age}
-                        className={`cursor-pointer px-2 py-1 rounded-md text-xs font-medium border transition-colors ${isSelected ? 'bg-primary text-primary-foreground border-primary shadow-sm' : 'bg-background text-muted-foreground border-border hover:border-primary/50'}`}
-                        onClick={() => {
-                          let current = [...((newAd.ageGroup as string[]) || [])];
-                          if (age === 'all') current = ['all'];
-                          else {
-                            current = current.filter(a => a !== 'all');
-                            if (current.includes(age)) current = current.filter(a => a !== age);
-                            else current.push(age);
-                            if (current.length === 0) current = ['all'];
-                          }
-                          setNewAd({ ...newAd, ageGroup: current as any });
-                        }}
-                      >
-                        <span className="capitalize">{age === 'youngAdult' ? 'Young Adult' : age === 'middleAged' ? 'Mid-Age' : age}</span>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs text-muted-foreground flex items-center gap-1">
-                  Duration (s)
-                  {isLoadingDuration && (
-                    <span className="text-primary animate-pulse">detecting...</span>
-                  )}
-                </label>
-                <Input
-                  type="number"
-                  min={5}
-                  max={600}
-                  value={newAd.duration || 30}
-                  onChange={(e) => setNewAd({ ...newAd, duration: parseInt(e.target.value) || 30 })}
-                />
-              </div>
-            </div>
-
-            <Button 
-              onClick={handleAddUrl} 
-              disabled={!newAd.title || !newAd.videoUrl}
-              className="w-full"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Add Ad from URL
+            <Button variant="outline" size="sm" className="gap-2" onClick={onRefresh}>
+              <RefreshCw className="h-3.5 w-3.5" />
+              Refresh
             </Button>
           </div>
 
-          {/* Ad List */}
+          {/* Playlist Items */}
           <div className="space-y-3">
             <h4 className="font-medium flex items-center justify-between">
               <span className="flex items-center gap-2">
                 <Tag className="h-4 w-4 text-primary" />
-                Current Ads ({ads.length})
+                Playlist ({ads.length})
               </span>
             </h4>
 
             {ads.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
-                No ads added yet. Upload or add a video URL above.
+                <Video className="h-10 w-10 mx-auto mb-3 opacity-40" />
+                <p className="font-medium">No playlist configured</p>
+                <p className="text-sm mt-1">Admin needs to set up ads in the backend.</p>
               </div>
             ) : (
-              <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
+              <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
                 {ads.map((ad) => (
                   <div 
                     key={ad.id}
-                    className="flex items-center gap-3 p-3 bg-card rounded-lg border border-border hover:border-primary/50 transition-colors"
+                    className="flex items-center gap-3 p-3 bg-card rounded-lg border border-border"
                   >
                     <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center">
                       <Video className="h-5 w-5 text-muted-foreground" />
                     </div>
 
-                    {editingAd?.id === ad.id ? (
-                      // Edit mode
-                      <div className="flex-1 grid grid-cols-4 gap-2">
-                        <Input
-                          value={editingAd.title}
-                          onChange={(e) => setEditingAd({ ...editingAd, title: e.target.value })}
-                          className="col-span-2"
-                        />
-                        <Select 
-                          value={editingAd.gender} 
-                          onValueChange={(v) => setEditingAd({ ...editingAd, gender: v as any })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">All</SelectItem>
-                            <SelectItem value="male">Male</SelectItem>
-                            <SelectItem value="female">Female</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <div className="col-span-2 flex flex-wrap gap-1 items-center border rounded-md p-1 bg-background">
-                          {['all', 'child', 'teen', 'youngAdult', 'middleAged', 'senior'].map(age => {
-                            const isSelected = editingAd.ageGroup.includes(age as any);
-                            return (
-                              <div 
-                                key={age}
-                                className={`cursor-pointer px-1.5 py-0.5 rounded text-[10px] font-medium border transition-colors ${isSelected ? 'bg-primary text-primary-foreground border-primary' : 'bg-transparent text-muted-foreground border-transparent hover:bg-muted'}`}
-                                onClick={() => {
-                                  let current = [...editingAd.ageGroup];
-                                  if (age === 'all') current = ['all'];
-                                  else {
-                                    current = current.filter(a => a !== 'all');
-                                    if (current.includes(age as any)) current = current.filter(a => a !== age);
-                                    else current.push(age as any);
-                                    if (current.length === 0) current = ['all'];
-                                  }
-                                  setEditingAd({ ...editingAd, ageGroup: current as any });
-                                }}
-                              >
-                                <span className="capitalize">{age === 'youngAdult' ? 'Young' : age === 'middleAged' ? 'Mid' : age}</span>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    ) : (
-                      // View mode
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{ad.title}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <TargetBadge type="gender" value={ad.gender} />
-                          {(Array.isArray(ad.ageGroup) ? ad.ageGroup : [ad.ageGroup]).map(age => (
-                            <TargetBadge key={age} type="age" value={age as string} />
-                          ))}
-                          <span className="text-xs text-muted-foreground">
-                            {ad.duration}s • Capture: {ad.captureStart}s-{ad.captureEnd}s
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate">{ad.title}</p>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <TargetBadge type="gender" value={ad.gender} />
+                        {(Array.isArray(ad.ageGroup) ? ad.ageGroup : [ad.ageGroup]).map(age => (
+                          <TargetBadge key={age} type="age" value={age as string} />
+                        ))}
+                        <span className="text-xs text-muted-foreground">
+                          {ad.duration}s
+                        </span>
+                        {ad.video_path && (
+                          <span className="text-xs text-muted-foreground truncate max-w-[150px]" title={ad.video_path}>
+                            📁 {ad.video_path}
                           </span>
-                        </div>
+                        )}
                       </div>
-                    )}
-
-                    <div className="flex items-center gap-1">
-                      {editingAd?.id === ad.id ? (
-                        <>
-                          <Button 
-                            variant="ghost" 
-                            size="icon"
-                            onClick={() => handleUpdateAd(editingAd)}
-                          >
-                            <Check className="h-4 w-4 text-success" />
-                          </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="icon"
-                            onClick={() => setEditingAd(null)}
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          <Button 
-                            variant="ghost" 
-                            size="icon"
-                            onClick={() => setEditingAd(ad)}
-                          >
-                            <Tag className="h-4 w-4" />
-                          </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="icon"
-                            onClick={() => handleRemoveAd(ad.id)}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </>
-                      )}
                     </div>
                   </div>
                 ))}

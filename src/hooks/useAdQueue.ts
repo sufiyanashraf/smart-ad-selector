@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useRef } from 'react';
 import { AdMetadata, DemographicCounts, AdScore, LogEntry } from '@/types/ad';
-import { sampleAds } from '@/data/sampleAds';
+
 
 interface UseAdQueueProps {
   customAds?: AdMetadata[];
@@ -17,19 +17,31 @@ const applyCapture = (ads: AdMetadata[], startPercent: number, endPercent: numbe
     captureEnd: Math.floor(ad.duration * endPercent / 100),
   }));
 
-const getDominantAudience = (demographics: DemographicCounts) => {
-  const dominantGender = demographics.male >= demographics.female ? 'male' : 'female';
+export interface AudienceWeights {
+  genderWeights: { male: number; female: number };
+  ageWeights: Record<'child' | 'teen' | 'youngAdult' | 'middleAged' | 'senior', number>;
+  totalViewers: number;
+  dominantGender: 'male' | 'female';
+  dominantAge: 'child' | 'teen' | 'youngAdult' | 'middleAged' | 'senior';
+}
 
-  const ageGroups = [
-    { key: 'child' as const, count: demographics.child },
-    { key: 'teen' as const, count: demographics.teen },
-    { key: 'youngAdult' as const, count: demographics.youngAdult },
-    { key: 'middleAged' as const, count: demographics.middleAged },
-    { key: 'senior' as const, count: demographics.senior },
-  ];
-  const dominantAge = ageGroups.reduce((max, g) => g.count > max.count ? g : max, ageGroups[0]).key;
+export const getAudienceWeights = (demographics: DemographicCounts): AudienceWeights => {
+  const totalGender = demographics.male + demographics.female;
+  const genderWeights = totalGender > 0
+    ? { male: demographics.male / totalGender, female: demographics.female / totalGender }
+    : { male: 0.5, female: 0.5 };
 
-  return { dominantGender, dominantAge };
+  const ageKeys = ['child', 'teen', 'youngAdult', 'middleAged', 'senior'] as const;
+  const totalAge = ageKeys.reduce((sum, k) => sum + demographics[k], 0);
+  const ageWeights = {} as Record<typeof ageKeys[number], number>;
+  for (const k of ageKeys) {
+    ageWeights[k] = totalAge > 0 ? demographics[k] / totalAge : 0.2;
+  }
+
+  const dominantGender = demographics.male >= demographics.female ? 'male' as const : 'female' as const;
+  const dominantAge = ageKeys.reduce((max, k) => demographics[k] > demographics[max] ? k : max, ageKeys[0]);
+
+  return { genderWeights, ageWeights, totalViewers: Math.max(totalGender, totalAge), dominantGender, dominantAge };
 };
 
 export const useAdQueue = (props?: UseAdQueueProps) => {
@@ -45,20 +57,20 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
   const recentlyPlayedRef = useRef<string[]>([]);
   const impressionCountsRef = useRef<Record<string, number>>({});
   const [queue, setQueue] = useState<AdMetadata[]>(() =>
-    applyCapture(customAds && customAds.length > 0 ? customAds : sampleAds, captureStartPercent, captureEndPercent)
+    applyCapture(customAds && customAds.length > 0 ? customAds : [], captureStartPercent, captureEndPercent)
   );
   const [playedAds, setPlayedAds] = useState<string[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const selectionRef = useRef<{ lastPlayedId: string | null; latestQueue: AdMetadata[] }>({
     lastPlayedId: null,
-    latestQueue: applyCapture(customAds && customAds.length > 0 ? customAds : sampleAds, captureStartPercent, captureEndPercent),
+    latestQueue: applyCapture(customAds && customAds.length > 0 ? customAds : [], captureStartPercent, captureEndPercent),
   });
 
   // NOTE: Do NOT sync selectionRef from queue state — it overwrites filtered results.
   // selectionRef.latestQueue is updated only inside reorderQueue() and updateQueue().
 
   const initialAds = useMemo(() => {
-    const ads = customAds && customAds.length > 0 ? customAds : sampleAds;
+    const ads = customAds && customAds.length > 0 ? customAds : [];
     return applyCapture(ads, captureStartPercent, captureEndPercent);
   }, [customAds, captureStartPercent, captureEndPercent]);
 
@@ -79,37 +91,55 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
   const scoreAd = useCallback((ad: AdMetadata, demographics: DemographicCounts): AdScore => {
     let score = 0;
     const reasons: string[] = [];
-    const { dominantGender, dominantAge } = getDominantAudience(demographics);
+    const weights = getAudienceWeights(demographics);
 
-    // Strict gender filter: wrong gender = excluded
-    if (ad.gender !== dominantGender && ad.gender !== 'all') {
-      return { ad, score: -100, reasons: ['✗ Gender mismatch — excluded'] };
-    }
-
-    // Gender match bonus
-    if (ad.gender === dominantGender) {
-      score += 5;
-      reasons.push(`✓ Gender: ${dominantGender}`);
-    } else {
+    // --- Gender scoring (proportional) ---
+    if (ad.gender === 'all') {
       score += 3;
-      reasons.push('✓ Gender: all');
+      reasons.push('✓ Gender: all (+3)');
+    } else {
+      const genderWeight = weights.genderWeights[ad.gender];
+      const genderScore = 5 * genderWeight;
+      score += genderScore;
+      reasons.push(`✓ Gender: ${ad.gender} (${(genderWeight * 100).toFixed(0)}% → +${genderScore.toFixed(1)})`);
+
+      // Soft penalty: targeting a gender with <20% presence
+      if (genderWeight < 0.2) {
+        score -= 2;
+        reasons.push(`⚠ Minority gender (<20% → -2)`);
+      }
     }
 
-    // Age match scoring
+    // --- Age scoring (proportional, sums across all targeted groups) ---
     const adAgeGroups = Array.isArray(ad.ageGroup) ? ad.ageGroup : [ad.ageGroup];
-    if (adAgeGroups.includes(dominantAge as any)) {
-      score += 5;
-      reasons.push(`✓ Age: ${dominantAge}`);
-    } else if (adAgeGroups.includes('all')) {
+    if (adAgeGroups.includes('all' as any)) {
       score += 3;
-      reasons.push('✓ Age: all');
+      reasons.push('✓ Age: all (+3)');
     } else {
-      score += 0;
-      reasons.push(`~ Age mismatch (${adAgeGroups.join(', ')})`);
+      let ageScore = 0;
+      const matchedGroups: string[] = [];
+      for (const ag of adAgeGroups) {
+        if (ag !== 'all' && ag in weights.ageWeights) {
+          const w = weights.ageWeights[ag as keyof typeof weights.ageWeights];
+          ageScore += 5 * w;
+          if (w > 0) matchedGroups.push(`${ag}:${(w * 100).toFixed(0)}%`);
+        }
+      }
+      score += ageScore;
+      if (matchedGroups.length > 0) {
+        reasons.push(`✓ Age: ${matchedGroups.join(', ')} (+${ageScore.toFixed(1)})`);
+      } else {
+        reasons.push(`~ Age: no match in audience`);
+      }
     }
 
-    // Impression weight penalty — gives less-played ads a natural advantage
-    // Capped at 2.5 so it NEVER overrides the +5 age match bonus (prevents playing wrong demographics)
+    // --- Multi-viewer bonus: ads targeting 'all' get a crowd bonus when >2 viewers ---
+    if (weights.totalViewers >= 3 && ad.gender === 'all') {
+      score += 1;
+      reasons.push(`👥 Crowd bonus (+1)`);
+    }
+
+    // --- Impression penalty (unchanged, capped at 2.5) ---
     const impressionCount = impressionCountsRef.current[ad.id] || 0;
     const impressionPenalty = Math.min(2.5, Math.log2(1 + impressionCount) * 0.5);
     if (impressionPenalty > 0) {
@@ -117,7 +147,7 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
       reasons.push(`Impressions: ${impressionCount} (-${impressionPenalty.toFixed(2)})`);
     }
 
-    // Small penalty for recently played (window of last 5)
+    // --- Recency penalty (unchanged) ---
     if (recentlyPlayedRef.current.includes(ad.id)) {
       const recencyIndex = recentlyPlayedRef.current.indexOf(ad.id);
       const penalty = 2 - recencyIndex;
@@ -130,26 +160,19 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
     return { ad, score, reasons };
   }, []);
 
-  const reorderQueue = useCallback((demographics: DemographicCounts) => {
-    console.log('[Queue] Reordering based on demographics:', demographics);
-    const { dominantGender, dominantAge } = getDominantAudience(demographics);
+  // Store latest scores for UI display
+  const lastScoresRef = useRef<AdScore[]>([]);
 
-    const allAds = customAds && customAds.length > 0 ? customAds : sampleAds;
+  const reorderQueue = useCallback((demographics: DemographicCounts) => {
+    const weights = getAudienceWeights(demographics);
+    console.log('[Queue] Reordering with audience weights:', weights);
+
+    const allAds = customAds && customAds.length > 0 ? customAds : [];
     const adsWithCapture = applyCapture(allAds, captureStartPercent, captureEndPercent);
 
-    // Step 1: Hard filter by gender
-    let filtered = adsWithCapture.filter(ad => ad.gender === dominantGender || ad.gender === 'all');
+    // Score ALL ads proportionally (no hard filtering)
+    const scored = adsWithCapture.map(ad => scoreAd(ad, demographics));
 
-    // Step 2: Fallback if nothing matched
-    if (filtered.length === 0) {
-      filtered = adsWithCapture.filter(ad => ad.gender === dominantGender);
-    }
-    if (filtered.length === 0) {
-      filtered = adsWithCapture; // last resort
-    }
-
-    // Step 3: Score within the filtered set (by age relevance)
-    const scored = filtered.map(ad => scoreAd(ad, demographics));
     // Primary sort by score; secondary sort by fewer impressions for fair rotation
     scored.sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
@@ -157,10 +180,15 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
       const bImpressions = impressionCountsRef.current[b.ad.id] || 0;
       return aImpressions - bImpressions;
     });
+
+    lastScoresRef.current = scored;
     const finalAds = scored.map(s => s.ad);
 
-    console.log('[Queue] Strict filter for', dominantGender, dominantAge, '→', finalAds.map(a => a.title).join(', '));
-    addLog('queue', `🔄 Queue: ${dominantGender} ${dominantAge} → ${finalAds.length} ads (${finalAds.map(a => a.title).join(', ')})`);
+    const summary = weights.totalViewers > 0
+      ? `👥 ${weights.totalViewers} viewers | ${weights.dominantGender} ${(weights.genderWeights[weights.dominantGender] * 100).toFixed(0)}% | ${weights.dominantAge}`
+      : 'No viewers';
+    console.log('[Queue] Weighted reorder:', summary, '→', finalAds.map(a => a.title).join(', '));
+    addLog('queue', `🔄 Queue: ${summary} → ${finalAds.length} ads`);
 
     selectionRef.current.latestQueue = finalAds;
     setQueue(finalAds);
@@ -247,5 +275,6 @@ export const useAdQueue = (props?: UseAdQueueProps) => {
     queueStats,
     updateQueue,
     resetManualQueueIndex,
+    lastScores: lastScoresRef.current,
   };
 };

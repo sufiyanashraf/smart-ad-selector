@@ -23,7 +23,21 @@ dist-ssr
 *.sln
 *.sw?
 
+# Planning & documentation (auto-generated, not for git)
 .planning/
+ARCHITECTURE_AND_ALGORITHMS.md
+COMPREHENSIVE_PROJECT_REPORT.md
+PROJECT_DOCUMENTATION.md
+SMART_ADS_SYSTEM_DOCUMENTATION.md
+FULL_SYSTEM_ARCHITECTURE.md
+SETTINGS.md
+architecture.md
+
+# Test artifacts
+playwright-report/
+test-results/
+
+# Environment
 .env
 .env.*
 !.env.example

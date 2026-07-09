@@ -25,6 +25,7 @@ export interface AdMetadata {
   captureEnd: number;
   thumbnail?: string;
   videoUrl: string;
+  video_path?: string;  // Relative path from backend (e.g., 'ads/pepsi.mp4')
 }
 
 export interface DemographicCounts {
