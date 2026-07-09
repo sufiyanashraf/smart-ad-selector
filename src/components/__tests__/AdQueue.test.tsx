@@ -71,7 +71,7 @@ describe('AdQueue', () => {
   it('renders the footer text', () => {
     render(<AdQueue queue={[]} currentAdId={null} />);
     expect(
-      screen.getByText(/Ads ranked by audience match/)
+      screen.getByText(/Ads ranked by weighted audience match/)
     ).toBeInTheDocument();
   });
 });
